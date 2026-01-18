@@ -37,9 +37,14 @@ def parse_pdf(pdf_path: Path, max_pages: int = 3):
     logger.info(f"Extracting PDF...")
     with PyMuPDFExtractor(pdf_path) as extractor:
         total_pages = len(extractor.doc)
-        pages_to_process = min(max_pages, total_pages)
         
-        logger.info(f"PDF has {total_pages} pages, processing first {pages_to_process}")
+        # max_pages=0 means "all pages"
+        if max_pages == 0:
+            pages_to_process = total_pages
+        else:
+            pages_to_process = min(max_pages, total_pages)
+        
+        logger.info(f"PDF has {total_pages} pages, processing {pages_to_process}")
         
         bundles = []
         for page_num in range(1, pages_to_process + 1):
