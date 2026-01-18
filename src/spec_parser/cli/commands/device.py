@@ -235,8 +235,9 @@ def update_device_spec(device_type: str, spec_version: str, spec_pdf: str,
     json_writer = JSONSidecarWriter()
     json_writer.write_document(pages, json_path, device_type)
     
-    # Get old JSON path
-    old_json_path = output_base / prev_version.index_path.replace("/index", "/json/document.json")
+    # Get old JSON path - use pathlib for cross-platform compatibility
+    index_path = Path(prev_version.index_path)
+    old_json_path = output_base / str(index_path.parent.parent / "json" / "document.json")
     old_pdf_path = spec_pdf_path  # TODO: Store old PDF path in registry?
     
     logger.info("Comparing with previous version...")
