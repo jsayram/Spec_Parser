@@ -2,6 +2,7 @@
 Intelligent OCR processing with text-check to avoid duplication.
 
 Only runs OCR on regions without selectable text.
+Uses ImagePreprocessor module for improved accuracy.
 """
 
 import pytesseract
@@ -11,7 +12,7 @@ from typing import List, Optional, Tuple
 from loguru import logger
 
 from spec_parser.schemas.page_bundle import PageBundle, OCRResult, TextBlock
-from spec_parser.schemas.citation import Citation
+from spec_parser.parsers.image_preprocessor import ImagePreprocessor
 from spec_parser.utils.bbox_utils import bbox_overlap, bbox_distance
 from spec_parser.config import settings
 from spec_parser.exceptions import OCRError
@@ -23,35 +24,44 @@ class OCRProcessor:
     Only runs OCR on regions without selectable text.
     """
 
-    def __init__(self, dpi: int = 300, confidence_threshold: float = 0.7):
+    def __init__(
+        self,
+        dpi: int = 300,
+        confidence_threshold: float = 0.7,
+        enable_preprocessing: bool = True,
+        contrast_factor: float = 1.5,
+        sharpness_factor: float = 2.0,
+    ):
         """
         Initialize OCR processor.
 
         Args:
             dpi: Rendering DPI for quality
             confidence_threshold: Minimum confidence to accept OCR results
+            enable_preprocessing: Enable image preprocessing for better OCR
+            contrast_factor: Contrast enhancement multiplier (1.0 = no change)
+            sharpness_factor: Sharpness enhancement multiplier (1.0 = no change)
         """
         self.dpi = dpi
         self.confidence_threshold = confidence_threshold
+        self.enable_preprocessing = enable_preprocessing
+        self.contrast_factor = contrast_factor
+        self.sharpness_factor = sharpness_factor
+        
+        # Initialize preprocessor if enabled
+        self._preprocessor = (
+            ImagePreprocessor(contrast_factor, sharpness_factor)
+            if enable_preprocessing
+            else None
+        )
 
     def process_page(
         self, page_bundle: PageBundle, pdf_page
     ) -> List[OCRResult]:
-        """
-        Process all OCR candidates on a page.
-
-        Steps:
-        1. Identify OCR candidates (pictures + graphics)
-        2. For each candidate, check if region has selectable text
-        3. If no text, render region to bitmap and run OCR
-        4. Return OCR results with confidence scores
-
-        Args:
-            page_bundle: PageBundle with blocks to process
-            pdf_page: PyMuPDF page object for rendering
-
-        Returns:
-            List of OCRResult objects
+        """Process all OCR candidates on a page.
+        
+        Identifies pictures + graphics, checks for selectable text,
+        renders to bitmap and runs OCR on candidates without text.
         """
         ocr_results = []
 
@@ -75,25 +85,24 @@ class OCRProcessor:
             # Render region and run OCR
             try:
                 image = self._render_region(pdf_page, candidate.bbox)
+                
+                # Apply preprocessing if enabled
+                if self.enable_preprocessing:
+                    image = self._preprocess_image(image)
+                
                 text, confidence = self._run_ocr(image)
 
                 if confidence >= self.confidence_threshold:
-                    # Find nearest caption
-                    caption_block = self._find_nearest_caption(
-                        candidate.bbox, page_bundle.get_blocks_by_type("text")
-                    )
-
                     ocr_result = OCRResult(
                         bbox=candidate.bbox,
                         text=text,
                         confidence=confidence,
                         source="tesseract",
-                        citation="",  # Will be set when added to bundle
+                        citation="",
                         associated_block=candidate.citation,
                         language=settings.ocr_language,
                     )
                     ocr_results.append(ocr_result)
-
                     logger.debug(
                         f"OCR extracted text from {candidate.citation} "
                         f"(confidence: {confidence:.2f})"
@@ -114,16 +123,7 @@ class OCRProcessor:
     def _has_selectable_text(
         self, pdf_page, bbox: Tuple[float, float, float, float]
     ) -> bool:
-        """
-        Check if bbox region contains extractable text.
-
-        Args:
-            pdf_page: PyMuPDF page object
-            bbox: Bounding box to check
-
-        Returns:
-            True if region has selectable text
-        """
+        """Check if bbox region contains extractable text."""
         words = pdf_page.get_text("words")
 
         for word in words:
@@ -136,17 +136,7 @@ class OCRProcessor:
     def _render_region(
         self, pdf_page, bbox: Tuple[float, float, float, float]
     ) -> Image.Image:
-        """
-        Render bbox region to high-DPI bitmap.
-
-        Args:
-            pdf_page: PyMuPDF page object
-            bbox: Region to render
-
-        Returns:
-            PIL Image of the region
-        """
-        # Get page dimensions
+        """Render bbox region to high-DPI bitmap."""
         page_rect = pdf_page.rect
         page_width = page_rect.width
         page_height = page_rect.height
@@ -177,6 +167,38 @@ class OCRProcessor:
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
         return img
+
+    def _preprocess_image(self, image: Image.Image) -> Image.Image:
+        """
+        Apply preprocessing to improve OCR accuracy.
+        
+        Delegates to ImagePreprocessor module.
+
+        Args:
+            image: Original PIL Image
+
+        Returns:
+            Preprocessed PIL Image optimized for OCR
+        """
+        if self._preprocessor:
+            return self._preprocessor.preprocess(image)
+        return image
+
+    def _otsu_threshold(self, img_array) -> int:
+        """
+        Calculate Otsu's threshold for binarization.
+        
+        Delegates to ImagePreprocessor for compatibility with tests.
+
+        Args:
+            img_array: Grayscale image as numpy array
+
+        Returns:
+            Optimal threshold value (0-255)
+        """
+        if self._preprocessor:
+            return self._preprocessor._otsu_threshold(img_array)
+        return 127  # Default fallback
 
     def _run_ocr(self, image: Image.Image) -> Tuple[str, float]:
         """

@@ -3,18 +3,24 @@
 Simple CLI to test Phase 3 search pipeline.
 
 Usage:
-    python test_phase3.py <spec_output_dir> <query>
+    # Build local (per-PDF) index
+    python test_phase3.py --local <spec_output_dir> [query]
+    
+    # Build/update master index (across all PDFs)
+    python test_phase3.py --master <spec_output_dir> [query]
 """
 
 import sys
 from pathlib import Path
 import json
+from typing import List
 from loguru import logger
 
 from spec_parser.embeddings.embedding_model import EmbeddingModel
 from spec_parser.search.faiss_indexer import FAISSIndexer
 from spec_parser.search.bm25_searcher import BM25Searcher
 from spec_parser.search.hybrid_search import HybridSearcher
+from spec_parser.search.master_index import MasterIndexManager
 from spec_parser.config import settings
 from spec_parser.utils.logger import setup_logger
 
@@ -162,44 +168,178 @@ def search_indices(index_dir: Path, query: str, k: int = 5):
     print(hybrid.format_results(hybrid_results))
 
 
+def build_master_index(spec_output_dirs: List[Path], force_reindex: bool = False):
+    """
+    Build or update master index across multiple PDFs.
+    
+    Args:
+        spec_output_dirs: List of Phase 2 output directories
+        force_reindex: Force re-indexing even if already indexed
+    """
+    logger.info(f"Building master index from {len(spec_output_dirs)} PDFs...")
+    
+    # Initialize embedding model
+    model_cache = settings.models_dir if settings.models_dir else None
+    embedding_model = EmbeddingModel(cache_dir=model_cache)
+    
+    # Create master index directory
+    master_index_dir = settings.spec_output_dir / "_master_index"
+    master_index_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize master index manager
+    manager = MasterIndexManager(master_index_dir, embedding_model)
+    
+    # Add each PDF to master index
+    total_chunks = 0
+    for spec_dir in spec_output_dirs:
+        # Find JSON sidecar
+        json_dir = spec_dir / "json"
+        json_files = list(json_dir.glob("*.json"))
+        
+        if not json_files:
+            logger.warning(f"No JSON found in {spec_dir.name}, skipping")
+            continue
+        
+        json_file = json_files[0]
+        pdf_name = json_file.stem  # e.g., "04_Abbott_InfoHQ"
+        
+        # Add to master index
+        chunks_added = manager.add_pdf(pdf_name, json_file, force_reindex)
+        total_chunks += chunks_added
+    
+    # Save master index
+    manager.save()
+    
+    # Print statistics
+    stats = manager.get_stats()
+    logger.success(f"\n✅ Master Index Built!")
+    logger.success(f"   Location: {master_index_dir}")
+    logger.success(f"   Total PDFs: {stats['total_pdfs']}")
+    logger.success(f"   Total Vectors: {stats['total_vectors']}")
+    logger.success(f"   Total Documents: {stats['total_documents']}")
+    logger.success(f"   Chunks Added: {total_chunks}")
+    
+    return master_index_dir
+
+
+def search_master_index(master_index_dir: Path, query: str, k: int = 10):
+    """
+    Search master index across all PDFs.
+    
+    Args:
+        master_index_dir: Directory containing master index
+        query: Search query
+        k: Number of results
+    """
+    logger.info(f"Searching master index for: '{query}'")
+    
+    # Load embedding model
+    model_cache = settings.models_dir if settings.models_dir else None
+    embedding_model = EmbeddingModel(cache_dir=model_cache)
+    
+    # Load master indices
+    faiss_path = master_index_dir / "faiss_index"
+    bm25_path = master_index_dir / "bm25_index"
+    
+    faiss_indexer = FAISSIndexer.load(faiss_path, embedding_model)
+    bm25_searcher = BM25Searcher.load(bm25_path)
+    
+    # Create hybrid searcher
+    hybrid = HybridSearcher(faiss_indexer, bm25_searcher)
+    
+    # Search
+    print("\n" + "="*80)
+    print("MASTER INDEX SEARCH (All PDFs)")
+    print("="*80)
+    results = hybrid.search(query, k, mode="hybrid")
+    print(hybrid.format_results(results))
+
+
 def main():
     """Main entry point"""
     if len(sys.argv) < 2:
-        print("Usage: python test_phase3.py <spec_output_dir> [query]")
+        print("Usage:")
+        print("  # Build local index (per-PDF)")
+        print("  python test_phase3.py --local <spec_output_dir> [query]")
+        print("\n  # Build/update master index (all PDFs)")
+        print("  python test_phase3.py --master <spec_output_dir> [query]")
+        print("\n  # Build master from multiple PDFs")
+        print("  python test_phase3.py --master <dir1> <dir2> <dir3> [query]")
         print("\nExamples:")
-        print("  # Build indices only")
-        print("  python test_phase3.py data/spec_output/20260118_000443_cobaliatsystemhimpoc/")
-        print("\n  # Build indices and search")
-        print("  python test_phase3.py data/spec_output/20260118_000443_cobaliatsystemhimpoc/ 'POCT1 message'")
+        print("  # Build local index")
+        print("  python test_phase3.py --local data/spec_output/20260118_013952_04AbbottInfoHQ/")
+        print("\n  # Build master index from all processed PDFs")
+        print("  python test_phase3.py --master data/spec_output/*/")
+        print("\n  # Search master index")
+        print("  python test_phase3.py --master data/spec_output/*/ 'POCT1 calibration'")
         sys.exit(1)
     
-    spec_output_dir = Path(sys.argv[1])
+    mode = sys.argv[1]
     
-    if not spec_output_dir.exists():
-        logger.error(f"Directory not found: {spec_output_dir}")
+    if mode not in ["--local", "--master"]:
+        logger.error(f"Invalid mode: {mode}. Use --local or --master")
         sys.exit(1)
     
-    # Check if indices exist
-    index_dir = spec_output_dir / "index"
-    indices_exist = (
-        (index_dir / "faiss_index.faiss").exists() and
-        (index_dir / "bm25_index.bm25.pkl").exists()
-    )
+    # Parse directories
+    spec_output_dirs = []
+    query = None
     
-    if not indices_exist:
-        logger.info("Indices not found, building...")
-        index_dir = build_indices(spec_output_dir)
-    else:
-        logger.info(f"Using existing indices: {index_dir}")
+    for arg in sys.argv[2:]:
+        path = Path(arg)
+        if path.exists() and path.is_dir():
+            spec_output_dirs.append(path)
+        else:
+            # Assume it's part of the query
+            if query:
+                query += " " + arg
+            else:
+                query = arg
     
-    # Search if query provided
-    if len(sys.argv) >= 3:
-        query = " ".join(sys.argv[2:])
-        search_indices(index_dir, query)
-    else:
-        logger.info("No query provided. Indices ready for search!")
-        print("\nTo search, run:")
-        print(f"  python test_phase3.py {spec_output_dir} 'your query here'")
+    if not spec_output_dirs:
+        logger.error("No valid directories provided")
+        sys.exit(1)
+    
+    if mode == "--local":
+        # Local index mode (per-PDF)
+        if len(spec_output_dirs) > 1:
+            logger.warning("--local mode only processes first directory")
+        
+        spec_dir = spec_output_dirs[0]
+        logger.info(f"Building local index for: {spec_dir.name}")
+        
+        # Check if indices exist
+        index_dir = spec_dir / "index"
+        indices_exist = (
+            (index_dir / "faiss_index.faiss").exists() and
+            (index_dir / "bm25_index.bm25.pkl").exists()
+        )
+        
+        if not indices_exist:
+            logger.info("Indices not found, building...")
+            index_dir = build_indices(spec_dir)
+        else:
+            logger.info(f"Using existing indices: {index_dir}")
+        
+        # Search if query provided
+        if query:
+            search_indices(index_dir, query)
+    
+    elif mode == "--master":
+        # Master index mode (cross-PDF)
+        master_index_dir = settings.spec_output_dir / "_master_index"
+        
+        # Build/update master index
+        if not query:
+            # Build mode
+            build_master_index(spec_output_dirs)
+        else:
+            # Check if master index exists
+            if not (master_index_dir / "faiss_index.faiss").exists():
+                logger.info("Master index not found, building...")
+                build_master_index(spec_output_dirs)
+            
+            # Search master index
+            search_master_index(master_index_dir, query)
 
 
 if __name__ == "__main__":

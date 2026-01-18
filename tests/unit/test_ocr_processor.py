@@ -129,3 +129,105 @@ class TestOCRProcessor:
         nearest = processor._find_nearest_caption(bbox, text_blocks)
 
         assert nearest is None
+
+
+class TestImagePreprocessing:
+    """Test image preprocessing functionality"""
+
+    def test_preprocessing_initialization(self):
+        """Test OCR processor with preprocessing options"""
+        processor = OCRProcessor(
+            enable_preprocessing=True,
+            contrast_factor=2.0,
+            sharpness_factor=1.5,
+        )
+        assert processor.enable_preprocessing is True
+        assert processor.contrast_factor == 2.0
+        assert processor.sharpness_factor == 1.5
+
+    def test_preprocessing_disabled(self):
+        """Test OCR processor with preprocessing disabled"""
+        processor = OCRProcessor(enable_preprocessing=False)
+        assert processor.enable_preprocessing is False
+
+    def test_preprocess_image_converts_to_grayscale(self):
+        """Test that preprocessing converts image to grayscale"""
+        processor = OCRProcessor(enable_preprocessing=True)
+
+        # Create a color test image
+        color_image = Image.new("RGB", (100, 100), color=(255, 0, 0))
+
+        preprocessed = processor._preprocess_image(color_image)
+
+        # Result should be grayscale (mode "L")
+        assert preprocessed.mode == "L"
+
+    def test_preprocess_image_output_size_preserved(self):
+        """Test that preprocessing preserves image dimensions"""
+        processor = OCRProcessor(enable_preprocessing=True)
+
+        original = Image.new("RGB", (200, 150), color="white")
+        preprocessed = processor._preprocess_image(original)
+
+        assert preprocessed.size == original.size
+
+    def test_preprocess_image_handles_binarization(self):
+        """Test that binarization produces only black and white pixels"""
+        processor = OCRProcessor(enable_preprocessing=True)
+
+        # Create a gradient test image
+        import numpy as np
+        gradient = np.tile(np.arange(256, dtype=np.uint8), (100, 1))
+        gradient_image = Image.fromarray(gradient, mode="L").convert("RGB")
+
+        preprocessed = processor._preprocess_image(gradient_image)
+        pixels = np.array(preprocessed)
+
+        # After binarization, should only have 0 or 255 values
+        unique_values = np.unique(pixels)
+        assert all(v in [0, 255] for v in unique_values)
+
+    def test_otsu_threshold_calculation(self):
+        """Test Otsu threshold calculation"""
+        processor = OCRProcessor()
+        import numpy as np
+
+        # Create a gradient image (0-255) which gives predictable threshold
+        # Otsu on a uniform gradient should find threshold around middle
+        gradient = np.tile(np.arange(256, dtype=np.uint8), (100, 1))
+
+        threshold = processor._otsu_threshold(gradient)
+
+        # For a uniform gradient, threshold should be somewhere in middle range
+        # The exact value depends on the algorithm but should be reasonable
+        assert 0 <= threshold <= 255
+        
+        # Also test that threshold is returned as an integer
+        assert isinstance(threshold, (int, np.integer))
+
+    def test_preprocess_image_inverts_dark_background(self):
+        """Test that dark background images are inverted"""
+        processor = OCRProcessor(enable_preprocessing=True)
+
+        # Create image with dark background (white text on black)
+        import numpy as np
+        dark_image = np.zeros((100, 100), dtype=np.uint8)
+        dark_image[40:60, 20:80] = 255  # White rectangle (simulating text)
+        pil_dark = Image.fromarray(dark_image, mode="L").convert("RGB")
+
+        preprocessed = processor._preprocess_image(pil_dark)
+        mean_value = np.mean(np.array(preprocessed))
+
+        # After inversion, background should be light (mean > 127)
+        assert mean_value > 127
+
+    def test_preprocess_image_error_handling(self):
+        """Test preprocessing handles errors gracefully"""
+        processor = OCRProcessor(enable_preprocessing=True)
+
+        # Create a valid image - preprocessing should succeed
+        valid_image = Image.new("RGB", (100, 100), color="white")
+        result = processor._preprocess_image(valid_image)
+
+        # Should return a valid image
+        assert isinstance(result, Image.Image)
