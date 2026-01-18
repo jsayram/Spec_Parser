@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple
 from loguru import logger
 
 from spec_parser.schemas.page_bundle import PageBundle, OCRResult, TextBlock
+from spec_parser.schemas.audit import ConfidenceLevel, classify_confidence
 from spec_parser.parsers.image_preprocessor import ImagePreprocessor
 from spec_parser.utils.bbox_utils import bbox_overlap, bbox_distance
 from spec_parser.config import settings
@@ -93,6 +94,10 @@ class OCRProcessor:
                 text, confidence = self._run_ocr(image)
 
                 if confidence >= self.confidence_threshold:
+                    # Classify confidence level
+                    conf_level = classify_confidence(confidence)
+                    needs_review = conf_level == ConfidenceLevel.REVIEW
+                    
                     ocr_result = OCRResult(
                         bbox=candidate.bbox,
                         text=text,
@@ -103,13 +108,25 @@ class OCRProcessor:
                         language=settings.ocr_language,
                     )
                     ocr_results.append(ocr_result)
-                    logger.debug(
-                        f"OCR extracted text from {candidate.citation} "
-                        f"(confidence: {confidence:.2f})"
-                    )
+                    
+                    status_msg = f"OCR extracted text from {candidate.citation}"
+                    if needs_review:
+                        logger.info(
+                            f"{status_msg} (confidence: {confidence:.2f}) "
+                            f"[NEEDS REVIEW - {conf_level.value}]"
+                        )
+                    else:
+                        logger.debug(
+                            f"{status_msg} (confidence: {confidence:.2f}) "
+                            f"[{conf_level.value}]"
+                        )
                 else:
+                    # Below threshold - rejected
+                    conf_level = classify_confidence(confidence)
                     logger.warning(
-                        f"Low OCR confidence {confidence:.2f} for {candidate.citation}"
+                        f"OCR rejected for {candidate.citation}: "
+                        f"confidence {confidence:.2f} < threshold {self.confidence_threshold} "
+                        f"[{conf_level.value}]"
                     )
 
             except Exception as e:

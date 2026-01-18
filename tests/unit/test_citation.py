@@ -173,3 +173,73 @@ class TestCitation:
         
         distance = citation1.distance_to(citation2)
         assert distance == float('inf')
+
+    def test_citation_with_content_hash(self):
+        """Test citation with content hash for integrity verification"""
+        citation = Citation(
+            citation_id="p1_txt1",
+            page=1,
+            bbox=(100.0, 200.0, 500.0, 300.0),
+            source="text",
+            content_type="text",
+            content_hash="abc123def456789",
+        )
+        
+        assert citation.content_hash == "abc123def456789"
+
+    def test_citation_requires_human_review(self):
+        """Test citation with human review flag"""
+        citation = Citation(
+            citation_id="p1_ocr1",
+            page=1,
+            bbox=(100.0, 200.0, 500.0, 300.0),
+            source="ocr",
+            content_type="picture",
+            confidence=0.65,
+            requires_human_review=True,
+        )
+        
+        assert citation.requires_human_review is True
+        footnote = citation.to_markdown_footnote()
+        assert "[NEEDS REVIEW]" in footnote
+
+    def test_citation_confidence_level(self):
+        """Test citation with confidence level classification"""
+        citation = Citation(
+            citation_id="p1_ocr1",
+            page=1,
+            bbox=(100.0, 200.0, 500.0, 300.0),
+            source="ocr",
+            content_type="picture",
+            confidence=0.75,
+            confidence_level="review",
+        )
+        
+        assert citation.confidence_level == "review"
+        footnote = citation.to_markdown_footnote()
+        assert "level: review" in footnote
+
+    def test_citation_full_compliance_fields(self):
+        """Test citation with all compliance-related fields"""
+        citation = Citation(
+            citation_id="p5_ocr3",
+            page=5,
+            bbox=(50.0, 100.0, 400.0, 250.0),
+            source="ocr",
+            content_type="picture",
+            confidence=0.62,
+            confidence_level="review",
+            requires_human_review=True,
+            content_hash="sha256hashvalue123",
+            file_reference="page5_img3.png",
+        )
+        
+        assert citation.content_hash == "sha256hashvalue123"
+        assert citation.requires_human_review is True
+        assert citation.confidence_level == "review"
+        
+        footnote = citation.to_markdown_footnote()
+        assert "confidence: 0.62" in footnote
+        assert "level: review" in footnote
+        assert "[NEEDS REVIEW]" in footnote
+        assert "file: page5_img3.png" in footnote

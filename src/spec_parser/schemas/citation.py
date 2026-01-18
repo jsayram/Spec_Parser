@@ -50,6 +50,18 @@ class Citation(BaseModel):
         None,
         description="Reference to extracted file (e.g., 'page12_img3.png')"
     )
+    content_hash: Optional[str] = Field(
+        None,
+        description="SHA-256 hash of content for integrity verification"
+    )
+    requires_human_review: bool = Field(
+        False,
+        description="Flag indicating content needs human review (OCR confidence 0.5-0.8)"
+    )
+    confidence_level: Optional[str] = Field(
+        None,
+        description="OCR confidence classification: 'accepted', 'review', or 'rejected'"
+    )
     
     @field_validator('bbox')
     @classmethod
@@ -87,6 +99,12 @@ class Citation(BaseModel):
         
         if self.confidence is not None:
             parts.append(f", confidence: {self.confidence:.2f}")
+        
+        if self.confidence_level:
+            parts.append(f", level: {self.confidence_level}")
+        
+        if self.requires_human_review:
+            parts.append(" [NEEDS REVIEW]")
         
         if self.file_reference:
             parts.append(f", file: {self.file_reference}")

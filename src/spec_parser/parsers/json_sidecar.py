@@ -2,15 +2,19 @@
 JSON sidecar writer for machine-readable output with complete provenance.
 
 Writes structured JSON with all extracted data and metadata.
+Includes extraction metadata for compliance and audit trails.
 """
 
 import json
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from loguru import logger
 
 from spec_parser.schemas.page_bundle import PageBundle
+from spec_parser.schemas.audit import ExtractionMetadata, ProcessingStats
 from spec_parser.utils.file_handler import write_json
+from spec_parser.utils.hashing import compute_file_hash, compute_extraction_hash
 from spec_parser.exceptions import FileHandlerError
 
 
@@ -57,7 +61,9 @@ class JSONSidecarWriter:
             raise FileHandlerError(f"Failed to write page bundle: {e}")
 
     def write_document(
-        self, page_bundles: List[PageBundle], output_path: Path, pdf_name: str
+        self, page_bundles: List[PageBundle], output_path: Path, pdf_name: str,
+        pdf_path: Optional[Path] = None,
+        extraction_metadata: Optional[ExtractionMetadata] = None,
     ) -> None:
         """
         Write complete document with all pages to JSON.
@@ -66,11 +72,52 @@ class JSONSidecarWriter:
             page_bundles: List of PageBundle objects
             output_path: Output JSON file path
             pdf_name: Name of source PDF
+            pdf_path: Optional path to source PDF for hash computation
+            extraction_metadata: Optional extraction metadata for compliance
         """
         try:
+            # Build extraction metadata if not provided
+            metadata_dict = None
+            if extraction_metadata:
+                metadata_dict = {
+                    "extraction_id": extraction_metadata.extraction_id,
+                    "extraction_timestamp": extraction_metadata.extraction_timestamp.isoformat(),
+                    "extraction_version": extraction_metadata.extraction_version,
+                    "source_pdf_hash": extraction_metadata.source_pdf_hash,
+                    "source_pdf_size_bytes": extraction_metadata.source_pdf_size_bytes,
+                    "stats": {
+                        "total_pages": extraction_metadata.stats.total_pages,
+                        "processed_pages": extraction_metadata.stats.processed_pages,
+                        "total_blocks": extraction_metadata.stats.total_blocks,
+                        "text_blocks": extraction_metadata.stats.text_blocks,
+                        "image_blocks": extraction_metadata.stats.image_blocks,
+                        "ocr_stats": {
+                            "total_regions": extraction_metadata.stats.ocr_stats.total_regions,
+                            "accepted_count": extraction_metadata.stats.ocr_stats.accepted_count,
+                            "review_count": extraction_metadata.stats.ocr_stats.review_count,
+                            "rejected_count": extraction_metadata.stats.ocr_stats.rejected_count,
+                            "average_confidence": extraction_metadata.stats.ocr_stats.average_confidence,
+                        },
+                        "processing_time_seconds": extraction_metadata.stats.processing_time_seconds,
+                        "error_count": len(extraction_metadata.stats.errors),
+                    },
+                    "requires_human_review": extraction_metadata.requires_human_review,
+                    "review_reason": extraction_metadata.review_reason,
+                }
+            elif pdf_path and pdf_path.exists():
+                # Compute basic metadata from PDF
+                pdf_hash = compute_file_hash(pdf_path)
+                pdf_size = pdf_path.stat().st_size
+                metadata_dict = {
+                    "extraction_timestamp": datetime.now().isoformat(),
+                    "source_pdf_hash": pdf_hash,
+                    "source_pdf_size_bytes": pdf_size,
+                }
+            
             data = {
                 "pdf_name": pdf_name,
                 "total_pages": len(page_bundles),
+                "extraction_metadata": metadata_dict,
                 "pages": [
                     self._serialize_page_bundle(bundle) for bundle in page_bundles
                 ],
