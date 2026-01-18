@@ -185,6 +185,9 @@ class MessageParser:
                 matches.extend(self.MESSAGE_TYPE_CATCHALL.finditer(content))
                 # Check for multi-segment vendor messages (Mes.mess2.mes3...)
                 matches.extend(self.VENDOR_MULTI_SEGMENT.finditer(content))
+                # Check for vendor Z segment patterns (ZXX, ZABC, Z12)
+                matches.extend(self.VENDOR_PATTERN.finditer(content))
+                matches.extend(self.VENDOR_PATTERN_EXTENDED.finditer(content))
                 
                 for match in matches:
                     # Extract message ID, normalize format
@@ -224,7 +227,7 @@ class MessageParser:
         return messages
     
     def _extract_field_specs(self, navigator: DocumentNavigator) -> List[FieldSpec]:
-        """Extract field specifications from tables."""
+        """Extract field specifications from tables and text blocks."""
         field_specs = []
         seen_fields = set()
         
@@ -241,6 +244,35 @@ class MessageParser:
                         if field and field.field_id not in seen_fields:
                             seen_fields.add(field.field_id)
                             field_specs.append(field)
+                
+                # Also check text blocks for field references
+                elif hasattr(block, 'content'):
+                    # Extract field IDs from text using all patterns
+                    content = block.content
+                    if not content:
+                        continue
+                    
+                    # Try all field patterns
+                    field_ids = []
+                    field_ids.extend([m.group(0) for m in self.FIELD_PATTERN.finditer(content)])
+                    field_ids.extend([f"{m.group(1)}-{m.group(2)}" for m in self.FIELD_PATTERN_ALT.finditer(content)])
+                    field_ids.extend([f"{m.group(1)}-{m.group(2)}" for m in self.FIELD_PATTERN_CATCHALL.finditer(content)])
+                    
+                    # Create minimal field specs for fields found in text
+                    for field_id in field_ids:
+                        if field_id not in seen_fields:
+                            seen_fields.add(field_id)
+                            citation = Citation(
+                                citation_id=f"p{page_num}_b{id(block)}",
+                                page=page_num,
+                                bbox=block.bbox,
+                                source="text",
+                                content_type="text"
+                            )
+                            field_specs.append(FieldSpec(
+                                field_id=field_id,
+                                citation=citation
+                            ))
         
         return field_specs
     
@@ -249,15 +281,21 @@ class MessageParser:
         field_specs = []
         lines = markdown_table.strip().split('\n')
         
-        if len(lines) < 3:  # Need header + separator + at least one row
+        if len(lines) < 2:  # Need at least header + one row
             return field_specs
         
         # Parse header to understand column structure
         header = [col.strip() for col in lines[0].strip('|').split('|')]
         
-        # Skip separator line (lines[1])
+        # Detect if line 1 is a separator (contains only dashes, pipes, colons, spaces)
+        start_row = 1
+        if len(lines) > 1:
+            separator_chars = set('-|: ')
+            if all(c in separator_chars for c in lines[1].strip()):
+                start_row = 2  # Skip separator
+        
         # Process data rows
-        for line in lines[2:]:
+        for line in lines[start_row:]:
             if not line.strip():
                 continue
             cells = [cell.strip() for cell in line.strip('|').split('|')]
@@ -328,8 +366,8 @@ class MessageParser:
         citation = Citation(
             page=table.page,
             bbox=table.bbox,
-            block_id=str(table.block_id),
             source="text",
+            content_type="table",
             citation_id=f"p{table.page}_b{table.block_id}"
         )
         
@@ -391,19 +429,7 @@ class MessageParser:
             # Extract prefix, handle various separators
             msg_prefix = msg.message_id.split('.')[0].split('^')[0].split('_')[0]
             
-            # Check if vendor extension (Z** patterns)
-            if self.VENDOR_PATTERN.match(msg_prefix) or self.VENDOR_PATTERN_EXTENDED.match(msg_prefix):
-                msg.category = "vendor_specific"
-                recognized.append(msg)
-                continue
-            
-            # Check if multi-segment vendor message (e.g., Mes.mess2.mes3.mes4)
-            if self.VENDOR_MULTI_SEGMENT.match(msg.message_id):
-                msg.category = "vendor_specific"
-                recognized.append(msg)
-                continue
-            
-            # Check against standards (exact match)
+            # Check against standards FIRST (before vendor patterns)
             found = False
             for category, prefixes in self.standards.items():
                 if category in ["metadata", "patterns"]:
@@ -414,16 +440,33 @@ class MessageParser:
                     found = True
                     break
             
-            # If not found, check if it looks like a valid message type (3-letter uppercase)
-            if not found:
-                if len(msg_prefix) == 3 and msg_prefix.isupper() and msg_prefix.isalpha():
-                    # Likely a valid POCT1 message type not in our standards list
-                    msg.category = "unrecognized"
-                    unrecognized.append(msg)
-                else:
-                    # Invalid format, still flag as unrecognized but with note
-                    msg.category = "unrecognized"
-                    unrecognized.append(msg)
+            if found:
+                continue
+            
+            # Check if vendor extension (Z** patterns)
+            if self.VENDOR_PATTERN.match(msg_prefix) or self.VENDOR_PATTERN_EXTENDED.match(msg_prefix):
+                msg.category = "vendor_specific"
+                recognized.append(msg)
+                continue
+            
+            # Check if multi-segment vendor message (e.g., Mes.custom.data.v2)
+            # Only match if it has 3+ segments to avoid matching standard messages like OBS.R01
+            if '.' in msg.message_id:
+                parts = msg.message_id.split('.')
+                if len(parts) >= 3:  # Vendor messages typically have multiple segments
+                    msg.category = "vendor_specific"
+                    recognized.append(msg)
+                    continue
+            
+            # If not found, mark as unrecognized
+            if len(msg_prefix) == 3 and msg_prefix.isupper() and msg_prefix.isalpha():
+                # Likely a valid POCT1 message type not in our standards list
+                msg.category = "unrecognized"
+                unrecognized.append(msg)
+            else:
+                # Invalid format or unknown pattern
+                msg.category = "unrecognized"
+                unrecognized.append(msg)
         
         return recognized, unrecognized
     
@@ -443,9 +486,9 @@ class MessageParser:
                     {
                         "page": c.page,
                         "bbox": c.bbox,
-                        "block_id": c.block_id,
                         "source": c.source,
-                        "citation_id": c.citation_id
+                        "citation_id": c.citation_id,
+                        "content_type": c.content_type
                     }
                     for c in msg.citations
                 ]

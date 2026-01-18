@@ -211,12 +211,16 @@ class SpecChangeDetector:
     
     def _extract_citation(self, block: Dict) -> Citation:
         """Extract citation from block."""
+        page = block.get("page", 1)  # Default to page 1, not 0 (pages are 1-indexed)
+        block_id = block.get("block_id", 0)
+        block_type = block.get("type", "text")
+        
         return Citation(
-            page=block.get("page", 0),
-            bbox=block.get("bbox", [0, 0, 0, 0]),
-            block_id=str(block.get("block_id", 0)),
+            page=page,
+            bbox=tuple(block.get("bbox", [0, 0, 0, 0])),
             source=block.get("source", "text"),
-            citation_id=f"p{block.get('page', 0)}_b{block.get('block_id', 0)}"
+            content_type=block_type,
+            citation_id=f"p{page}_b{block_id}"
         )
     
     def _should_rebuild(
@@ -369,7 +373,7 @@ class SpecChangeDetector:
             lines.append("\n### ⚠️ Unrecognized Messages (Auto-Accepted for Review)")
             for msg in inv.unrecognized_messages:
                 citations_str = ", ".join([
-                    f"Page {c.page}, Block {c.block_id}, BBox({', '.join(map(str, c.bbox))})"
+                    f"Page {c.page}, Citation {c.citation_id}, BBox({', '.join(map(str, c.bbox))})"
                     for c in msg.citations
                 ])
                 lines.append(f"- **{msg.message_id}** {msg.direction} - {citations_str}")
@@ -438,10 +442,10 @@ PDF hash comparison shows no modifications.
         lines.append(f"**Change:** {change.change_type.value}")
         
         if change.old_citation:
-            lines.append(f"**Old:** Page {change.old_citation.page}, Block {change.old_citation.block_id}, BBox({', '.join(map(str, change.old_citation.bbox))})")
+            lines.append(f"**Old:** Page {change.old_citation.page}, Citation {change.old_citation.citation_id}, BBox({', '.join(map(str, change.old_citation.bbox))})")
         
         if change.new_citation:
-            lines.append(f"**New:** Page {change.new_citation.page}, Block {change.new_citation.block_id}, BBox({', '.join(map(str, change.new_citation.bbox))})")
+            lines.append(f"**New:** Page {change.new_citation.page}, Citation {change.new_citation.citation_id}, BBox({', '.join(map(str, change.new_citation.bbox))})")
         
         lines.append(f"**Reasoning:** {change.reasoning}")
         

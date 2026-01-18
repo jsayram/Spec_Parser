@@ -128,7 +128,8 @@ class TestFieldExtraction:
         field = next(f for f in inventory.field_specs if f.field_id == "MSH-9")
         assert field.citation is not None
         assert field.citation.page == 2
-        assert field.citation.block_id == "4"
+        # Citation ID is auto-generated during JSON sidecar loading
+        assert field.citation.citation_id.startswith("p2_")
 
 
 class TestCategorization:
