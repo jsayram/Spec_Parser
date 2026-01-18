@@ -125,11 +125,12 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     json_writer.write_document(pages, json_path, device_type_name)
     
     # Write markdown
-    from ...parsers.markdown_builder import build_markdown
+    from ...parsers.markdown_pipeline import MarkdownPipeline
     md_dir = version_dir / "markdown"
     md_dir.mkdir(exist_ok=True)
     md_path = md_dir / "full_document.md"
-    markdown_content = build_markdown(pages)
+    pipeline = MarkdownPipeline()
+    markdown_content = pipeline.build_simple_markdown(pages)
     md_path.write_text(markdown_content)
     
     logger.info("Building search indices...")
@@ -353,11 +354,12 @@ def update_device_spec(config: Optional[str], device_type: Optional[str],
         logger.info("Rebuilding index...")
         
         # Write markdown
-        from ...parsers.markdown_builder import build_markdown
+        from ...parsers.markdown_pipeline import MarkdownPipeline
         md_dir = version_dir / "markdown"
         md_dir.mkdir(exist_ok=True)
         md_path = md_dir / "full_document.md"
-        markdown_content = build_markdown(pages)
+        pipeline = MarkdownPipeline()
+        markdown_content = pipeline.build_simple_markdown(pages)
         md_path.write_text(markdown_content)
         
         # Build indices

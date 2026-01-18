@@ -310,22 +310,3 @@ class MarkdownPipeline:
             lines.append("")
 
         return "\n".join(lines)
-
-
-# Legacy compatibility aliases for gradual migration
-MarkdownMerger = MarkdownPipeline  # Alias for existing code
-DocumentAssembler = MarkdownPipeline  # Alias for existing code
-
-# Legacy function for compatibility with existing code
-def build_markdown(pages: List[PageBundle]) -> str:
-    """
-    Legacy compatibility function for existing imports.
-    
-    Args:
-        pages: List of PageBundle objects
-        
-    Returns:
-        Simple markdown document
-    """
-    pipeline = MarkdownPipeline()
-    return pipeline.build_simple_markdown(pages)

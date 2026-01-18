@@ -271,8 +271,8 @@ class MessageParser:
                         citation_id=f"p{page}_table",
                         page=page,
                         bbox=bbox,
-                        source="table",
-                        content_type="table"
+                        source="text",  # Citation source must be text/ocr/graphics
+                        content_type="text"  # or could use "graphics" for tables
                     )
                 )
                 # Try to populate other fields from table columns
