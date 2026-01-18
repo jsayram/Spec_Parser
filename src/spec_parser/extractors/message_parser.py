@@ -8,11 +8,12 @@ using dual detection: table column matching + POCT1 pattern recognition.
 import json
 import re
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..rlm.document_navigator import DocumentNavigator
+from ..parsers.json_sidecar import JSONSidecarWriter
 from ..schemas.citation import Citation
 
 
@@ -130,12 +131,11 @@ class MessageParser:
         Returns:
             MessageInventory with recognized/unrecognized messages and fields
         """
-        # Load JSON sidecar
-        with open(json_sidecar_path, 'r') as f:
-            doc_data = json.load(f)
+        # Load JSON sidecar and convert to PageBundle objects
+        page_bundles = JSONSidecarWriter.load_document(json_sidecar_path)
         
         # Create DocumentNavigator for table queries
-        navigator = DocumentNavigator(doc_data)
+        navigator = DocumentNavigator(page_bundles)
         
         # Extract message types from content
         messages = self._extract_message_types(navigator)
@@ -166,13 +166,17 @@ class MessageParser:
         seen_messages = set()
         
         # Search all blocks for message type patterns
-        for page_data in navigator.document:
-            page_num = page_data.get("page", 0)
+        for page_num in navigator.pages:
+            page_bundle = navigator.page_bundles[page_num]
             
-            for block in page_data.get("blocks", []):
-                content = block.get("markdown", "")
-                block_id = block.get("block_id", 0)
-                bbox = block.get("bbox", [0, 0, 0, 0])
+            for block in page_bundle.blocks:
+                # Get content based on block type
+                if hasattr(block, 'content'):
+                    content = block.content
+                else:
+                    content = ""
+                bbox = block.bbox
+                citation = block.citation
                 
                 # Find message type patterns (try all pattern variations)
                 matches = []
@@ -184,31 +188,37 @@ class MessageParser:
                 
                 for match in matches:
                     # Extract message ID, normalize format
-                    if '\^' in match.group(0):
-                        msg_id = match.group(1) + '.' + match.group(2).split('_')[-1]  # OBS^OBS_R01 -> OBS.R01                    elif self.VENDOR_MULTI_SEGMENT.match(match.group(0)):
-                        msg_id = match.group(0)  # Keep vendor multi-segment as-is (Mes.mess2.mes3)                    else:
+                    msg_id = None
+                    if '^' in match.group(0):
+                        # Handle OBS^OBS_R01 -> OBS.R01
+                        parts = match.group(0).split('^')
+                        if len(parts) == 2:
+                            msg_id = parts[0] + '.' + parts[1].split('_')[-1]
+                    elif self.VENDOR_MULTI_SEGMENT.match(match.group(0)):
+                        msg_id = match.group(0)  # Keep vendor multi-segment as-is (Mes.mess2.mes3)
+                    else:
                         msg_id = match.group(0).replace('_', '.').replace('^', '.')  # Normalize separators
                     
-                    if msg_id not in seen_messages:
+                    if msg_id and msg_id not in seen_messages:
                         seen_messages.add(msg_id)
                         
                         # Determine directionality from context
                         direction = self._infer_direction(content, msg_id)
                         
-                        # Create citation
-                        citation = Citation(
+                        # Create citation object
+                        cit = Citation(
+                            citation_id=citation or f"p{page_num}_b{id(block)}",
                             page=page_num,
                             bbox=bbox,
-                            block_id=str(block_id),
-                            source=block.get("source", "text"),
-                            citation_id=f"p{page_num}_b{block_id}"
+                            source="text",
+                            content_type="text"
                         )
                         
                         messages.append(MessageType(
                             message_id=msg_id,
                             direction=direction,
                             category="",  # Will be set during categorization
-                            citations=[citation]
+                            citations=[cit]
                         ))
         
         return messages
@@ -218,22 +228,75 @@ class MessageParser:
         field_specs = []
         seen_fields = set()
         
-        # Try each column pattern to find field tables
-        for column_pattern in self.FIELD_TABLE_COLUMNS:
-            tables = navigator.find_tables_by_columns(column_pattern)
+        # Iterate through all pages and their tables
+        for page_num in navigator.pages:
+            page_bundle = navigator.page_bundles[page_num]
             
-            for table in tables:
-                for row in table.rows:
-                    field_id = self._extract_field_id_from_row(row)
-                    if field_id and field_id not in seen_fields:
-                        seen_fields.add(field_id)
-                        field_specs.append(self._parse_field_row(row, table, field_id))
+            # Find table blocks
+            for block in page_bundle.blocks:
+                if hasattr(block, 'markdown_table') and block.markdown_table:
+                    # Parse markdown table to extract field specs
+                    field_data = self._parse_markdown_table(block.markdown_table, page_num, block.bbox)
+                    for field in field_data:
+                        if field and field.field_id not in seen_fields:
+                            seen_fields.add(field.field_id)
+                            field_specs.append(field)
         
         return field_specs
     
-    def _extract_field_id_from_row(self, row: Dict) -> Optional[str]:
-        """Extract field ID (e.g., MSH-9) from table row using all patterns."""
-        for cell_value in row.values():
+    def _parse_markdown_table(self, markdown_table: str, page: int, bbox: Tuple) -> List[FieldSpec]:
+        """Parse a markdown table to extract field specifications."""
+        field_specs = []
+        lines = markdown_table.strip().split('\n')
+        
+        if len(lines) < 3:  # Need header + separator + at least one row
+            return field_specs
+        
+        # Parse header to understand column structure
+        header = [col.strip() for col in lines[0].strip('|').split('|')]
+        
+        # Skip separator line (lines[1])
+        # Process data rows
+        for line in lines[2:]:
+            if not line.strip():
+                continue
+            cells = [cell.strip() for cell in line.strip('|').split('|')]
+            
+            # Try to extract field ID from cells
+            field_id = self._extract_field_id_from_cells(cells)
+            if field_id:
+                field_spec = FieldSpec(
+                    field_id=field_id,
+                    citation=Citation(
+                        citation_id=f"p{page}_table",
+                        page=page,
+                        bbox=bbox,
+                        source="table",
+                        content_type="table"
+                    )
+                )
+                # Try to populate other fields from table columns
+                for i, col_name in enumerate(header):
+                    if i < len(cells):
+                        col_lower = col_name.lower()
+                        if 'name' in col_lower:
+                            field_spec.name = cells[i]
+                        elif 'type' in col_lower:
+                            field_spec.data_type = cells[i]
+                        elif 'opt' in col_lower:
+                            field_spec.optionality = cells[i]
+                        elif 'card' in col_lower:
+                            field_spec.cardinality = cells[i]
+                        elif 'desc' in col_lower:
+                            field_spec.description = cells[i]
+                
+                field_specs.append(field_spec)
+        
+        return field_specs
+    
+    def _extract_field_id_from_cells(self, cells: List[str]) -> Optional[str]:
+        """Extract field ID (e.g., MSH-9) from table cells using all patterns."""
+        for cell_value in cells:
             if isinstance(cell_value, str):
                 # Try standard pattern first
                 match = self.FIELD_PATTERN.search(cell_value)

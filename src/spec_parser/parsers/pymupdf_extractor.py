@@ -121,13 +121,20 @@ class PyMuPDFExtractor:
         )
         return bundle
 
-    def extract_all_pages(self) -> List[PageBundle]:
-        """Extract content from all pages"""
+    def extract_all_pages(self, max_pages: int = None) -> List[PageBundle]:
+        """Extract content from all pages
+        
+        Args:
+            max_pages: Optional limit on number of pages to extract (for debugging)
+        """
         if not self.doc:
             raise PDFExtractionError("PDF not opened. Use context manager.")
 
         bundles = []
-        for page_num in range(1, len(self.doc) + 1):
+        total_pages = len(self.doc)
+        pages_to_process = min(max_pages, total_pages) if max_pages else total_pages
+        
+        for page_num in range(1, pages_to_process + 1):
             try:
                 bundle = self.extract_page(page_num)
                 bundles.append(bundle)
@@ -135,7 +142,7 @@ class PyMuPDFExtractor:
                 logger.error(f"Failed to extract page {page_num}: {e}")
                 # Continue with other pages
 
-        logger.info(f"Extracted {len(bundles)}/{len(self.doc)} pages from {self.pdf_name}")
+        logger.info(f"Extracted {len(bundles)}/{total_pages} pages from {self.pdf_name}")
         return bundles
 
     def _extract_text_blocks(self, page, page_num: int) -> List[TextBlock]:

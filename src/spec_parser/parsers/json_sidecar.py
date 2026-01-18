@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from loguru import logger
 
-from spec_parser.schemas.page_bundle import PageBundle
+from spec_parser.schemas.page_bundle import PageBundle, TextBlock, PictureBlock, TableBlock, OCRResult
+from spec_parser.schemas.citation import Citation
 from spec_parser.schemas.audit import ExtractionMetadata, ProcessingStats
-from spec_parser.utils.file_handler import write_json
+from spec_parser.utils.file_handler import write_json, read_json
 from spec_parser.utils.hashing import compute_file_hash, compute_extraction_hash
 from spec_parser.exceptions import FileHandlerError
 
@@ -203,3 +204,114 @@ class JSONSidecarWriter:
             data["file_reference"] = citation.file_reference
 
         return data
+
+    @staticmethod
+    def load_document(json_path: Path) -> List[PageBundle]:
+        """
+        Load JSON sidecar and deserialize back to PageBundle objects.
+        
+        Supports two formats:
+        1. Full format: {"pdf_name": "...", "pages": [...]}
+        2. Simple format: [...] (list of pages directly - for tests)
+        
+        Args:
+            json_path: Path to JSON sidecar file
+            
+        Returns:
+            List of PageBundle objects
+        """
+        try:
+            data = read_json(json_path)
+            
+            # Handle both formats: full format with "pages" key, or simple list
+            if isinstance(data, list):
+                # Simple format (test format): list of pages directly
+                pages_data = data
+            elif isinstance(data, dict) and "pages" in data:
+                # Full format: {"pdf_name": "...", "pages": [...]}
+                pages_data = data["pages"]
+            else:
+                raise ValueError(f"Invalid JSON format: expected list or dict with 'pages' key")
+            
+            page_bundles = []
+            
+            for page_data in pages_data:
+                # Deserialize blocks
+                blocks = []
+                for block_data in page_data.get("blocks", []):
+                    block_type = block_data.get("type")
+                    bbox = tuple(block_data.get("bbox", []))
+                    citation = block_data.get("citation") or f"p{page_data.get('page', 0)}_b{block_data.get('block_id', id(block_data))}"
+                    
+                    if block_type == "text":
+                        # Handle both 'content' and 'markdown' fields for backward compatibility
+                        content_text = block_data.get("content") or block_data.get("markdown", "")
+                        blocks.append(TextBlock(
+                            type=block_type,
+                            bbox=bbox,
+                            citation=citation,
+                            content=content_text,
+                            md_slice=block_data.get("md_slice") or (0, len(content_text)),
+                            source=block_data.get("source", "text")
+                        ))
+                    elif block_type == "picture":
+                        blocks.append(PictureBlock(
+                            type=block_type,
+                            bbox=bbox,
+                            citation=citation,
+                            image_ref=block_data.get("image_ref", ""),
+                            source=block_data.get("source", "picture")
+                        ))
+                    elif block_type == "table":
+                        # Handle both 'markdown_table' and 'markdown' fields for backward compatibility
+                        table_markdown = block_data.get("markdown_table") or block_data.get("markdown", "")
+                        blocks.append(TableBlock(
+                            type=block_type,
+                            bbox=bbox,
+                            citation=citation,
+                            table_ref=block_data.get("table_ref", ""),
+                            markdown_table=table_markdown,
+                            source=block_data.get("source", "text")
+                        ))
+                
+                # Deserialize OCR results
+                ocr_results = []
+                for ocr_data in page_data.get("ocr", []):
+                    ocr_results.append(OCRResult(
+                        bbox=tuple(ocr_data.get("bbox", [])),
+                        text=ocr_data.get("text", ""),
+                        confidence=ocr_data.get("confidence", 0.0),
+                        source=ocr_data.get("source", "ocr"),
+                        citation=ocr_data.get("citation"),
+                        associated_block=ocr_data.get("associated_block"),
+                        language=ocr_data.get("language", "eng")
+                    ))
+                
+                # Deserialize citations
+                citations = {}
+                for cid, citation_data in page_data.get("citations", {}).items():
+                    citations[cid] = Citation(
+                        citation_id=citation_data.get("citation_id", cid),
+                        page=citation_data.get("page"),
+                        bbox=tuple(citation_data.get("bbox", [])),
+                        source=citation_data.get("source", "text"),
+                        content_type=citation_data.get("content_type", "text"),
+                        confidence=citation_data.get("confidence"),
+                        file_reference=citation_data.get("file_reference")
+                    )
+                
+                # Create PageBundle
+                page_bundles.append(PageBundle(
+                    page=page_data.get("page"),
+                    markdown=page_data.get("markdown", ""),
+                    blocks=blocks,
+                    ocr=ocr_results,
+                    citations=citations,
+                    metadata=page_data.get("metadata", {})
+                ))
+            
+            logger.info(f"Loaded {len(page_bundles)} page bundles from {json_path}")
+            return page_bundles
+            
+        except Exception as e:
+            raise FileHandlerError(f"Failed to load document from {json_path}: {e}")

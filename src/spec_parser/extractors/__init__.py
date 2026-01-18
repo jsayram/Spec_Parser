@@ -5,9 +5,11 @@ Deterministic extraction of structured entities from PDF specs.
 """
 
 from .base_extractor import BaseExtractor
-from .message_extractor import MessageExtractor
+from .message_parser import MessageParser
+from .message_extractor import MessageExtractor  # Legacy alias for compatibility
 
 __all__ = [
     "BaseExtractor",
-    "MessageExtractor",
+    "MessageParser",
+    "MessageExtractor",  # Legacy alias
 ]

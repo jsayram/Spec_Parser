@@ -1,7 +1,11 @@
 """
 Extract POCT1-A message definitions from specifications.
 
-Identifies message types, segments, and structure from tables and text patterns.
+DEPRECATED: This module is superseded by message_parser.py which provides
+more complete extraction using DocumentNavigator patterns.
+
+This module is kept for backward compatibility with existing tests.
+For new code, use MessageParser from message_parser.py instead.
 """
 
 from typing import List, Dict, Optional, Any
