@@ -11,6 +11,7 @@ from typing import Optional
 from datetime import datetime
 import click
 from loguru import logger
+import pymupdf
 
 from ...parsers.pymupdf_extractor import PyMuPDFExtractor
 from ...parsers.ocr_processor import OCRProcessor
@@ -104,20 +105,24 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     
     logger.info("Extracting PDF with PyMuPDF + OCR...")
     
-    # Extract PDF
+    # Extract PDF and run OCR
     with PyMuPDFExtractor(spec_pdf_path) as extractor:
         pages = extractor.extract_all_pages()
-    
-    # Run OCR on images
-    ocr_processor = OCRProcessor()
-    for page in pages:
-        ocr_processor.process_page(page)
+        
+        # Run OCR on images (need to reopen PDF for page access)
+        ocr_processor = OCRProcessor()
+        pdf_doc = pymupdf.open(spec_pdf_path)
+        for page_bundle in pages:
+            pdf_page = pdf_doc[page_bundle.page - 1]  # page_bundle.page is 1-indexed
+            ocr_processor.process_page(page_bundle, pdf_page)
+        pdf_doc.close()
     
     # Write JSON sidecar
     json_path = version_dir / "json" / "document.json"
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_writer = JSONSidecarWriter()
-    json_writer.write_document(pages, json_path, device_type)
+    device_type_name = f"{vendor}_{model}"
+    json_writer.write_document(pages, json_path, device_type_name)
     
     # Write markdown
     from ...parsers.markdown_builder import build_markdown
@@ -132,12 +137,35 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     # Build FAISS index
     index_dir = version_dir / "index"
     index_dir.mkdir(exist_ok=True)
-    faiss_indexer = FAISSIndexer(index_dir)
-    faiss_indexer.index_document(json_path)
+    
+    from ...embeddings.embedding_model import EmbeddingModel
+    embedding_model = EmbeddingModel()
+    faiss_indexer = FAISSIndexer(embedding_model, index_dir / "faiss.index")
+    
+    # Index document texts (simplified - just index text blocks for now)
+    logger.info("Indexing document texts...")
+    texts = []
+    metadatas = []
+    for page_bundle in pages:
+        for block in page_bundle.blocks:
+            if hasattr(block, 'markdown') and block.markdown:
+                texts.append(block.markdown)
+                metadatas.append({
+                    "page": page_bundle.page,
+                    "bbox": block.bbox,
+                    "type": block.type
+                })
+    
+    if texts:
+        faiss_indexer.add_texts(texts, metadatas)
+        faiss_indexer.save()
+        logger.info(f"Indexed {len(texts)} text blocks")
     
     # Build BM25 index
-    bm25_searcher = BM25Searcher(index_dir)
-    bm25_searcher.index_document(json_path)
+    bm25_searcher = BM25Searcher(index_dir / "bm25.index")
+    bm25_searcher.add_texts(texts, metadatas)
+    bm25_searcher.save()
+    logger.info("BM25 index built")
     
     logger.info("Analyzing messages and generating baseline report...")
     
