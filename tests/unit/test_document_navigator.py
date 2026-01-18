@@ -5,7 +5,7 @@ Unit tests for RLM DocumentNavigator.
 import pytest
 
 from spec_parser.rlm.document_navigator import DocumentNavigator
-from spec_parser.models.rlm_models import SearchResult, DocumentSpan
+from spec_parser.schemas.rlm_models import SearchResult, DocumentSpan
 from spec_parser.exceptions import RLMError
 
 

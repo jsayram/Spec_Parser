@@ -16,8 +16,8 @@ import re
 from typing import List, Optional, Dict, Tuple
 from loguru import logger
 
-from spec_parser.models.page_bundle import PageBundle
-from spec_parser.models.rlm_models import (
+from spec_parser.schemas.page_bundle import PageBundle
+from spec_parser.schemas.rlm_models import (
     DocumentSpan,
     TableReference,
     HeadingNode,

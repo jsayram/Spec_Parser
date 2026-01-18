@@ -18,11 +18,18 @@ class Settings(BaseSettings):
     
     # Project paths
     project_root: Path = Path(__file__).parent.parent.parent
-    output_dir: Path = project_root / "output"
-    image_dir: Path = output_dir / "images"
-    markdown_dir: Path = output_dir / "markdown"
-    json_dir: Path = output_dir / "json"
-    index_dir: Path = output_dir / "indices"
+    data_dir: Path = project_root / "data"
+    specs_dir: Path = data_dir / "specs"
+    spec_output_dir: Path = data_dir / "spec_output"
+    models_dir: Path = project_root / "models"  # For LLM/embedding model binaries
+    
+    # Output directories (set dynamically per parsing run)
+    # Use create_output_session() to generate timestamped directory
+    output_dir: Optional[Path] = None
+    image_dir: Optional[Path] = None
+    markdown_dir: Optional[Path] = None
+    json_dir: Optional[Path] = None
+    index_dir: Optional[Path] = None
     
     # OCR settings
     ocr_language: str = "eng"
@@ -59,14 +66,59 @@ class Settings(BaseSettings):
     
     def ensure_directories(self):
         """Create all required directories"""
-        for directory in [
-            self.output_dir,
-            self.image_dir,
-            self.markdown_dir,
-            self.json_dir,
-            self.index_dir
-        ]:
-            directory.mkdir(parents=True, exist_ok=True)
+        # Ensure base directories exist
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.specs_dir.mkdir(parents=True, exist_ok=True)
+        self.spec_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create output session directories if set
+        if self.output_dir:
+            for directory in [
+                self.output_dir,
+                self.image_dir,
+                self.markdown_dir,
+                self.json_dir,
+                self.index_dir
+            ]:
+                if directory:
+                    directory.mkdir(parents=True, exist_ok=True)
+    
+    def create_output_session(self, pdf_path: Path) -> Path:
+        """
+        Create timestamped output directory for parsing session.
+        
+        Format: YYYYMMDD_HHMMSS_{identifier}
+        
+        Args:
+            pdf_path: Path to PDF being parsed
+            
+        Returns:
+            Path to created output directory
+        """
+        from datetime import datetime
+        import re
+        
+        # Generate timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Extract identifier from PDF name
+        pdf_stem = pdf_path.stem
+        # Remove version numbers, dates, and common suffixes
+        identifier = re.sub(r'[_\-](v\d+|version\d+|\d{4,8})', '', pdf_stem, flags=re.IGNORECASE)
+        identifier = re.sub(r'[^a-zA-Z0-9]', '', identifier)[:20]  # Max 20 chars, alphanumeric only
+        
+        # Create session directory
+        session_name = f"{timestamp}_{identifier}"
+        self.output_dir = self.spec_output_dir / session_name
+        self.image_dir = self.output_dir / "images"
+        self.markdown_dir = self.output_dir / "markdown"
+        self.json_dir = self.output_dir / "json"
+        self.index_dir = self.output_dir / "index"
+        
+        # Create directories
+        self.ensure_directories()
+        
+        return self.output_dir
 
 
 # Global settings instance

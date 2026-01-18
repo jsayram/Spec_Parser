@@ -5,7 +5,7 @@ Unit tests for Citation model.
 import pytest
 from pydantic import ValidationError
 
-from spec_parser.models.citation import Citation
+from spec_parser.schemas.citation import Citation
 
 
 class TestCitation:

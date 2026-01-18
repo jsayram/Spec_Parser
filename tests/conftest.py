@@ -6,9 +6,9 @@ import pytest
 from pathlib import Path
 from typing import List
 
-from spec_parser.models.citation import Citation
-from spec_parser.models.page_bundle import PageBundle, TextBlock, PictureBlock, TableBlock
-from spec_parser.models.rlm_models import DocumentSpan, TOCEntry
+from spec_parser.schemas.citation import Citation
+from spec_parser.schemas.page_bundle import PageBundle, TextBlock, PictureBlock, TableBlock
+from spec_parser.schemas.rlm_models import DocumentSpan, TOCEntry
 from spec_parser.rlm.document_navigator import DocumentNavigator
 
 

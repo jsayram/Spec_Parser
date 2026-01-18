@@ -127,16 +127,11 @@ $RECYCLE.BIN/
 .directory
 .Trash-*
 
-# Extracted data (except test fixtures)
-images/
-json/
-markdown/
-index/
-
 # Models and embeddings cache
 models/
 .cache/
 
-# Keep specs folder but ignore its contents
-specs/*
-!specs/.gitkeep
+# Data directory (input PDFs and parsing outputs)
+data/
+!data/specs/.gitkeep
+!data/spec_output/.gitkeep
