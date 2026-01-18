@@ -71,12 +71,33 @@ verify_env.bat
 
 ### Device Lifecycle Commands
 
+#### Quick Start with Config Files
+
+The easiest way to use the CLI is with JSON configuration files:
+
+```bash
+# Onboard a new device
+spec-parser device onboard --config examples/onboard_config.json
+
+# Update existing device
+spec-parser device update --config examples/update_config.json
+```
+
+See [examples/README.md](examples/README.md) for configuration file formats and more examples.
+
+#### Command-Line Options
+
 **List registered devices:**
 ```bash
 spec-parser device list
 ```
 
-**Onboard new device:**
+**Onboard new device (with config file):**
+```bash
+spec-parser device onboard --config examples/onboard_config.json
+```
+
+**Onboard new device (with CLI options):**
 ```bash
 spec-parser device onboard \
   --vendor "Abbott" \
@@ -86,7 +107,12 @@ spec-parser device onboard \
   --spec-pdf path/to/spec.pdf
 ```
 
-**Update device specification:**
+**Update device specification (with config file):**
+```bash
+spec-parser device update --config examples/update_config.json
+```
+
+**Update device specification (with CLI options):**
 ```bash
 spec-parser device update \
   --device-type "Abbott_InfoHQ" \
@@ -95,13 +121,25 @@ spec-parser device update \
   --approve "Added support for new OBS messages"
 ```
 
-**Review unrecognized messages:**
+**Review unrecognized messages (with config file):**
+```bash
+spec-parser device review-message --config examples/review_approve.json
+```
+
+**Review unrecognized messages (with CLI options):**
 ```bash
 spec-parser device review-message \
   --device-type "Abbott_InfoHQ" \
   --message "ZXX" \
   --action approve \
   --notes "Vendor-specific extension for device status"
+```
+
+**Mix config files with CLI options (CLI overrides config):**
+```bash
+spec-parser device onboard \
+  --config examples/onboard_config.json \
+  --spec-version "3.3.2"
 ```
 
 ## Cross-Platform Compatibility

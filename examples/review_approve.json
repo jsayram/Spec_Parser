@@ -1,0 +1,6 @@
+{
+  "device_type": "Roche_CobasLiat",
+  "message": "ZOP",
+  "action": "approve",
+  "notes": "Vendor-specific operator update message - confirmed with vendor documentation"
+}

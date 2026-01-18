@@ -24,6 +24,21 @@ from ...schemas.device_registry import (
 from ...utils.hashing import compute_file_hash
 
 
+def load_config(config_path: Path) -> dict:
+    """Load configuration from JSON file."""
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        logger.info(f"Loaded config from: {config_path}")
+        return config
+    except FileNotFoundError:
+        logger.error(f"Config file not found: {config_path}")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in config file: {e}")
+        sys.exit(1)
+
+
 @click.group(name="device")
 def device_commands():
     """Device lifecycle management commands."""
@@ -31,20 +46,40 @@ def device_commands():
 
 
 @device_commands.command(name="onboard")
-@click.option("--vendor", required=True, help="Vendor name (e.g., Abbott)")
-@click.option("--model", required=True, help="Model name (e.g., InfoHQ)")
-@click.option("--device-name", required=True, help="Human-readable device name")
-@click.option("--spec-version", required=True, help="Spec version (e.g., 3.3.1)")
-@click.option("--spec-pdf", required=True, type=click.Path(exists=True), help="Path to spec PDF")
+@click.option("--config", type=click.Path(exists=True), help="Path to JSON config file")
+@click.option("--vendor", help="Vendor name (e.g., Abbott)")
+@click.option("--model", help="Model name (e.g., InfoHQ)")
+@click.option("--device-name", help="Human-readable device name")
+@click.option("--spec-version", help="Spec version (e.g., 3.3.1)")
+@click.option("--spec-pdf", type=click.Path(exists=True), help="Path to spec PDF")
 @click.option("--output-dir", default="data/spec_output", help="Output directory")
-def onboard_device(vendor: str, model: str, device_name: str, spec_version: str, 
-                   spec_pdf: str, output_dir: str):
+def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional[str], 
+                   device_name: Optional[str], spec_version: Optional[str], 
+                   spec_pdf: Optional[str], output_dir: str):
     """
     Onboard new device type with initial spec version.
     
     Extracts PDF, parses messages/fields, generates baseline report,
     and registers device in registry.
+    
+    Use --config to load settings from JSON file, or provide individual options.
+    CLI options override config file values.
     """
+    # Load from config file if provided
+    if config:
+        config_data = load_config(Path(config))
+        vendor = vendor or config_data.get("vendor")
+        model = model or config_data.get("model")
+        device_name = device_name or config_data.get("device_name")
+        spec_version = spec_version or config_data.get("spec_version")
+        spec_pdf = spec_pdf or config_data.get("spec_pdf")
+        output_dir = config_data.get("output_dir", output_dir)
+    
+    # Validate required fields
+    if not all([vendor, model, device_name, spec_version, spec_pdf]):
+        logger.error("Missing required parameters. Provide --config or all of: --vendor, --model, --device-name, --spec-version, --spec-pdf")
+        sys.exit(1)
+    
     logger.info(f"Onboarding device: {vendor} {model} v{spec_version}")
     
     spec_pdf_path = Path(spec_pdf)
@@ -70,8 +105,8 @@ def onboard_device(vendor: str, model: str, device_name: str, spec_version: str,
     logger.info("Extracting PDF with PyMuPDF + OCR...")
     
     # Extract PDF
-    extractor = PyMuPDFExtractor()
-    pages = extractor.extract(spec_pdf_path)
+    with PyMuPDFExtractor(spec_pdf_path) as extractor:
+        pages = extractor.extract_all_pages()
     
     # Run OCR on images
     ocr_processor = OCRProcessor()
@@ -170,19 +205,38 @@ def onboard_device(vendor: str, model: str, device_name: str, spec_version: str,
 
 
 @device_commands.command(name="update")
-@click.option("--device-type", required=True, help="Device type ID (vendor_model)")
-@click.option("--spec-version", required=True, help="New spec version")
-@click.option("--spec-pdf", required=True, type=click.Path(exists=True), help="Path to new spec PDF")
+@click.option("--config", type=click.Path(exists=True), help="Path to JSON config file")
+@click.option("--device-type", help="Device type ID (vendor_model)")
+@click.option("--spec-version", help="New spec version")
+@click.option("--spec-pdf", type=click.Path(exists=True), help="Path to new spec PDF")
 @click.option("--approve", help="Approval reason (required if rebuild needed)")
 @click.option("--output-dir", default="data/spec_output", help="Output directory")
-def update_device_spec(device_type: str, spec_version: str, spec_pdf: str,
+def update_device_spec(config: Optional[str], device_type: Optional[str], 
+                       spec_version: Optional[str], spec_pdf: Optional[str],
                        approve: Optional[str], output_dir: str):
     """
     Update device spec to new version.
     
     Compares with previous version, generates change report,
     and rebuilds index if HIGH/MEDIUM impact changes detected.
+    
+    Use --config to load settings from JSON file, or provide individual options.
+    CLI options override config file values.
     """
+    # Load from config file if provided
+    if config:
+        config_data = load_config(Path(config))
+        device_type = device_type or config_data.get("device_type")
+        spec_version = spec_version or config_data.get("spec_version")
+        spec_pdf = spec_pdf or config_data.get("spec_pdf")
+        approve = approve or config_data.get("approve")
+        output_dir = config_data.get("output_dir", output_dir)
+    
+    # Validate required fields
+    if not all([device_type, spec_version, spec_pdf]):
+        logger.error("Missing required parameters. Provide --config or all of: --device-type, --spec-version, --spec-pdf")
+        sys.exit(1)
+    
     logger.info(f"Updating device: {device_type} → v{spec_version}")
     
     spec_pdf_path = Path(spec_pdf)
@@ -221,8 +275,8 @@ def update_device_spec(device_type: str, spec_version: str, spec_pdf: str,
     logger.info("Extracting new spec version...")
     
     # Extract PDF
-    extractor = PyMuPDFExtractor()
-    pages = extractor.extract(spec_pdf_path)
+    with PyMuPDFExtractor(spec_pdf_path) as extractor:
+        pages = extractor.extract_all_pages()
     
     # Run OCR
     ocr_processor = OCRProcessor()
@@ -326,12 +380,32 @@ def update_device_spec(device_type: str, spec_version: str, spec_pdf: str,
 
 
 @device_commands.command(name="review-message")
-@click.option("--device-type", required=True, help="Device type ID")
-@click.option("--message", required=True, help="Message ID to review")
-@click.option("--action", required=True, type=click.Choice(["approve", "reject", "defer"]))
+@click.option("--config", type=click.Path(exists=True), help="Path to JSON config file")
+@click.option("--device-type", help="Device type ID")
+@click.option("--message", help="Message ID to review")
+@click.option("--action", type=click.Choice(["approve", "reject", "defer"]), help="Review action")
 @click.option("--notes", default="", help="Review notes")
-def review_message(device_type: str, message: str, action: str, notes: str):
-    """Review and update status of unrecognized message."""
+def review_message(config: Optional[str], device_type: Optional[str], 
+                   message: Optional[str], action: Optional[str], notes: str):
+    """
+    Review and update status of unrecognized message.
+    
+    Use --config to load settings from JSON file, or provide individual options.
+    CLI options override config file values.
+    """
+    # Load from config file if provided
+    if config:
+        config_data = load_config(Path(config))
+        device_type = device_type or config_data.get("device_type")
+        message = message or config_data.get("message")
+        action = action or config_data.get("action")
+        notes = notes or config_data.get("notes", "")
+    
+    # Validate required fields
+    if not all([device_type, message, action]):
+        logger.error("Missing required parameters. Provide --config or all of: --device-type, --message, --action")
+        sys.exit(1)
+    
     logger.info(f"Reviewing message: {device_type} - {message}")
     
     custom_msg_path = Path("data/custom_messages.json")

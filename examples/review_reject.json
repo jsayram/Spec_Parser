@@ -1,0 +1,6 @@
+{
+  "device_type": "Roche_CobasLiat",
+  "message": "ZQC",
+  "action": "reject",
+  "notes": "Not a valid POCT1 message - appears to be OCR error"
+}

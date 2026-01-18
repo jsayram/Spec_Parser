@@ -1,0 +1,8 @@
+{
+  "vendor": "Quidel",
+  "model": "Sofia",
+  "device_name": "Quidel Sofia 2 POCT System",
+  "spec_version": "1.5.3",
+  "spec_pdf": "data/specs/spec_others/03QuidelSofiaLISSpec.pdf",
+  "output_dir": "data/spec_output"
+}

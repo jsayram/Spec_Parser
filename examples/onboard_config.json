@@ -1,0 +1,8 @@
+{
+  "vendor": "Roche",
+  "model": "CobasLiat",
+  "device_name": "Roche cobas Liat Analyzer",
+  "spec_version": "3.3.1",
+  "spec_pdf": "data/specs/spec_others/02_Roche_cobas_Liat_Host_Interface_Manual_POCT1-A.pdf",
+  "output_dir": "data/spec_output"
+}

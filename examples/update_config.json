@@ -1,0 +1,7 @@
+{
+  "device_type": "Roche_CobasLiat",
+  "spec_version": "3.4.0",
+  "spec_pdf": "data/specs/spec_others/roche_cobas_liat_v3.4.0.pdf",
+  "approve": "Approved new OBS.R02 message for extended results",
+  "output_dir": "data/spec_output"
+}

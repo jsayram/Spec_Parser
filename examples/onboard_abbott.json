@@ -1,0 +1,8 @@
+{
+  "vendor": "Abbott",
+  "model": "InfoHQ",
+  "device_name": "Abbott InfoHQ POCT Analyzer",
+  "spec_version": "2.1.0",
+  "spec_pdf": "data/specs/abbott_infohq_v2.1.0.pdf",
+  "output_dir": "data/spec_output"
+}
