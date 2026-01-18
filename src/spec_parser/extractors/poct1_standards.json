@@ -1,0 +1,55 @@
+{
+  "observation": [
+    "OBS",
+    "ORU",
+    "ORR",
+    "ORL"
+  ],
+  "config": [
+    "QCN",
+    "OPL",
+    "OSL",
+    "OML",
+    "OUL"
+  ],
+  "qc": [
+    "QCN",
+    "QRY"
+  ],
+  "common": [
+    "ACK",
+    "MSH",
+    "PID",
+    "OBR",
+    "OBX",
+    "NTE",
+    "ORC",
+    "SPM",
+    "SAC",
+    "TQ1",
+    "TCD",
+    "SFT",
+    "ERR"
+  ],
+  "query": [
+    "QRY",
+    "QBP",
+    "RSP"
+  ],
+  "patterns": {
+    "message_type_regex": "([A-Z]{3})\\.[A-Z]\\d{2}",
+    "message_type_alternative": "([A-Z]{3})\\^([A-Z]{3}_[A-Z]\\d{2})",
+    "field_pattern": "([A-Z]{3})-(\\d+)",
+    "field_pattern_alternative": "([A-Z]{3})\\.(\\d+)",
+    "vendor_pattern": "Z[A-Z]{2}",
+    "vendor_message_multi_segment": "[A-Z][a-zA-Z0-9]+(?:\\.[a-zA-Z0-9]+)+",
+    "catch_all_message": "([A-Z]{3,})[.^_]([A-Z]+\\d+)",
+    "catch_all_field": "([A-Z]{2,})[-._](\\d+)"
+  },
+  "metadata": {
+    "protocol": "POCT1",
+    "version": "1.0",
+    "description": "POCT1-specific message types with catch-all patterns for edge cases",
+    "note": "HL7 EXTENSION: Create hl7_standards.json with full v2.x message types and update message_parser.py to load protocol-specific standards based on document type"
+  }
+}
