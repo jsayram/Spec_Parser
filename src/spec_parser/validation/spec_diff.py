@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from ..utils.hashing import compute_file_hash
 from ..validation.impact_classifier import classify_change, ImpactLevel, ChangeType
 from ..extractors.message_parser import MessageParser, MessageInventory
+from ..extractors.analyte_extractor import AnalyteExtractor
 from ..schemas.citation import Citation
 
 
@@ -137,6 +138,9 @@ class SpecChangeDetector:
     ) -> SpecDiff:
         """Create baseline diff for first version."""
         inventory = self.message_parser.parse_spec(json_path, device_type)
+        
+        # Store json_path for analyte extraction later
+        inventory._json_path = json_path
         
         return SpecDiff(
             old_version="none",
@@ -364,8 +368,15 @@ class SpecChangeDetector:
             f"**Total Messages:** {len(inv.recognized_messages) + len(inv.unrecognized_messages)}",
             f"**Total Fields:** {len(inv.field_specs)}",
             "",
-            "## Message Inventory"
         ]
+        
+        # Add analyte extraction section
+        analytes_section = self._generate_analyte_section(inv)
+        if analytes_section:
+            lines.extend(analytes_section)
+            lines.append("")
+        
+        lines.append("## Message Inventory")
         
         # Group by category
         for category, messages in inv.categories.items():
@@ -411,6 +422,57 @@ class SpecChangeDetector:
         lines.append("This is the initial onboarding - no previous version to compare.")
         
         return "\n".join(lines)
+    
+    def _generate_analyte_section(self, inventory: MessageInventory) -> List[str]:
+        """Generate supported analytes section."""
+        lines = []
+        
+        try:
+            # Extract analytes from document and fields
+            extractor = AnalyteExtractor()
+            
+            # Get analytes from fields
+            field_analytes = extractor.extract_from_fields(inventory.extracted_fields)
+            
+            # Get analytes from document if json_path available
+            if hasattr(inventory, '_json_path'):
+                with open(inventory._json_path, 'r') as f:
+                    document = json.load(f)
+                doc_analytes = extractor.extract_from_document(document)
+                
+                # Combine and deduplicate
+                all_analytes = {}
+                for analyte in field_analytes + doc_analytes:
+                    # Keep the one with most info
+                    if analyte.name not in all_analytes:
+                        all_analytes[analyte.name] = analyte
+                    else:
+                        # Prefer table/field sources over text mentions
+                        existing = all_analytes[analyte.name]
+                        if (analyte.source in ['table', 'field_example'] and 
+                            existing.source == 'text_mention'):
+                            all_analytes[analyte.name] = analyte
+                
+                analytes_list = sorted(all_analytes.values(), key=lambda a: a.name.lower())
+            else:
+                analytes_list = field_analytes
+            
+            if analytes_list:
+                lines.append(f"## Supported Analytes ({len(analytes_list)} total)")
+                lines.append("")
+                
+                for analyte in analytes_list:
+                    test_info = f" ({analyte.test_type})" if analyte.test_type else ""
+                    page_info = f" - Page {analyte.page}" if analyte.page else ""
+                    source_info = f" [{analyte.source}]" if analyte.source != 'unknown' else ""
+                    lines.append(f"- {analyte.name}{test_info}{page_info}{source_info}")
+                
+        except Exception as e:
+            from loguru import logger
+            logger.warning(f"Failed to extract analytes: {e}")
+            return []
+        
+        return lines
     
     def _generate_change_report(self, diff: SpecDiff, vendor: str, model: str) -> str:
         """Generate change report between versions."""

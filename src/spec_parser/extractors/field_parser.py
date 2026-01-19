@@ -219,52 +219,79 @@ class FieldTableParser:
         """
         Infer field type from name, description, and example.
         
+        Priority: description > field name > example format
+        
         Args:
             field_name: Field name (e.g., "HDR.control_id")
             description: Field description
             example: Example value
             
         Returns:
-            Inferred type: string, datetime, int, float, bool
+            Inferred type: string, datetime, int, float, bool, code
         """
         field_lower = field_name.lower()
         desc_lower = description.lower() if description else ""
         
-        # Check for datetime patterns
-        if any(x in field_lower for x in ['date', 'time', 'dttm', 'timestamp']):
-            return "datetime"
+        # PRIORITY 1: Check description first (most reliable)
+        # Explicit type mentions in description
+        if 'string' in desc_lower or 'text' in desc_lower:
+            return "string"
         
-        if example:
-            # Check example format
-            # DateTime: YYYYMMDDHHMMSS or ISO format
-            if re.match(r'\d{14}', example.replace('-', '').replace(':', '').replace('T', '')):
-                return "datetime"
-            
-            # ISO datetime
-            if re.match(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', example):
-                return "datetime"
-            
-            # Integer
-            if re.match(r'^-?\d+$', example.strip('"')):
-                return "int"
-            
-            # Float
-            if re.match(r'^-?\d+\.\d+$', example.strip('"')):
-                return "float"
-            
-            # Boolean
-            if example.strip('"').lower() in ['true', 'false', 'yes', 'no', '0', '1']:
-                return "bool"
+        if any(x in desc_lower for x in ['code', 'cd', 'identifier']):
+            # Check if it's a coded value
+            if any(x in desc_lower for x in ['values are', 'possible values', 'either', 
+                                             'always:', 'one of', 'can be']):
+                return "code"
         
-        # Check description for type hints
         if any(x in desc_lower for x in ['number', 'integer', 'count', 'quantity', 'qty']):
-            return "int"
+            # But not if description says "string"
+            if 'string' not in desc_lower:
+                return "int"
         
         if any(x in desc_lower for x in ['float', 'decimal', 'percent']):
             return "float"
         
         if any(x in desc_lower for x in ['flag', 'boolean', 'true/false']):
             return "bool"
+        
+        # PRIORITY 2: Check field name patterns
+        # Code/enum fields ending in _cd or containing "code"
+        if field_lower.endswith('_cd') or '_code' in field_lower:
+            return "code"
+        
+        # ID fields that look numeric but are strings
+        if 'id' in field_lower and 'identify' in desc_lower:
+            return "string"
+        
+        # DateTime patterns
+        if any(x in field_lower for x in ['date', 'time', 'dttm', 'timestamp']):
+            return "datetime"
+        
+        # PRIORITY 3: Check example format (least reliable)
+        if example:
+            example_clean = example.strip('"').strip()
+            
+            # DateTime: YYYYMMDDHHMMSS or ISO format
+            if re.match(r'\d{14}', example_clean.replace('-', '').replace(':', '').replace('T', '')):
+                return "datetime"
+            
+            # ISO datetime
+            if re.match(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', example_clean):
+                return "datetime"
+            
+            # Don't infer numeric types from example if description suggests string
+            if 'string' not in desc_lower and 'text' not in desc_lower:
+                # Integer
+                if re.match(r'^-?\d+$', example_clean):
+                    return "int"
+                
+                # Float
+                if re.match(r'^-?\d+\.\d+$', example_clean):
+                    return "float"
+            
+            # Boolean
+            if example_clean.lower() in ['true', 'false', 'yes', 'no', '0', '1']:
+                return "bool"
         
         # Default to string
         return "string"
