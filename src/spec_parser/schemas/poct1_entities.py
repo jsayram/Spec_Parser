@@ -20,7 +20,7 @@ class FieldSpec(BaseModel):
     
     name: str = Field(..., description="Field name (e.g., 'MSH-1 Field Separator')")
     seq: Optional[str] = Field(None, description="Sequence number (e.g., 'MSH-1')")
-    data_type: Optional[str] = Field(None, description="HL7 data type (e.g., 'ST', 'ID', 'TS')")
+    data_type: Optional[str] = Field(None, description="POCT1 data type (e.g., 'ST', 'ID', 'TS', 'CE', 'CX')")
     optionality: Optional[str] = Field(None, description="R (Required), O (Optional), C (Conditional)")
     cardinality: Optional[str] = Field(None, description="Repetition (e.g., '[1..1]', '[0..*]')")
     length: Optional[int] = Field(None, description="Maximum field length")
@@ -60,7 +60,7 @@ class MessageDefinition(BaseModel):
     """
     
     message_type: str = Field(..., description="Message type code (e.g., 'OBS.R01')")
-    trigger_event: Optional[str] = Field(None, description="HL7 trigger event")
+    trigger_event: Optional[str] = Field(None, description="POCT1 trigger event (e.g., R01, J01, Q02)")
     description: str = Field(..., description="Message purpose and usage")
     structure: Optional[str] = Field(None, description="Message structure definition")
     fields: List[FieldSpec] = Field(default_factory=list, description="Field specifications")

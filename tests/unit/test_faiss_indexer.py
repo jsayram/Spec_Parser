@@ -31,7 +31,7 @@ def sample_texts():
         "Host Interface Manual describes system communication.",
         "Roche diagnostics provides medical devices.",
         "Blood glucose monitoring requires accurate sensors.",
-        "HL7 standard enables healthcare data exchange."
+        "POCT1 standard enables point-of-care testing data exchange."
     ]
 
 

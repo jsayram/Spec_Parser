@@ -304,7 +304,7 @@ def _extract_field_names(content: str) -> Optional[str]:
 
 def _extract_data_type(content: str) -> Optional[str]:
     """Extract data type from content (ST, NM, CX, etc.)."""
-    # Common HL7/POCT1 data types
+    # Common POCT1 data types
     match = re.search(r'\b(ST|NM|CX|CE|TS|DTM|ID|IS|TX|FT|DT|TM)\b', content)
     return match.group(1) if match else None
 
