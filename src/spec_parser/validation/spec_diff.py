@@ -14,6 +14,7 @@ from ..utils.hashing import compute_file_hash
 from ..validation.impact_classifier import classify_change, ImpactLevel, ChangeType
 from ..extractors.message_parser import MessageParser, MessageInventory
 from ..extractors.analyte_extractor import AnalyteExtractor
+from ..extractors.enum_extractor import extract_enums_from_fields
 from ..schemas.citation import Citation
 
 
@@ -421,6 +422,11 @@ class SpecChangeDetector:
         lines.append("\n## No Comparison")
         lines.append("This is the initial onboarding - no previous version to compare.")
         
+        # Add enum value definitions section
+        enum_section = self._generate_enum_section(inv)
+        if enum_section:
+            lines.extend(enum_section)
+        
         return "\n".join(lines)
     
     def _generate_analyte_section(self, inventory: MessageInventory) -> List[str]:
@@ -470,6 +476,89 @@ class SpecChangeDetector:
         except Exception as e:
             from loguru import logger
             logger.warning(f"Failed to extract analytes: {e}")
+            return []
+        
+        return lines
+    
+    def _generate_enum_section(self, inventory: MessageInventory) -> List[str]:
+        """Generate enum/code field value definitions section."""
+        lines = []
+        
+        try:
+            # Extract from raw field definitions which have examples
+            if hasattr(inventory, '_json_path'):
+                from ..utils.file_handler import read_json
+                from ..extractors.field_parser import parse_fields_from_document
+                
+                document = read_json(inventory._json_path)
+                raw_fields = parse_fields_from_document(document)
+                
+                # Convert FieldDefinition objects to dicts
+                field_dicts = [
+                    {
+                        "field_name": f.field_name,
+                        "field_type": f.field_type,
+                        "description": f.description or "",
+                        "example": f.example,
+                        "message_id": f.message_id,
+                        "page": f.page
+                    }
+                    for f in raw_fields
+                ]
+            else:
+                # Fallback: use extracted_fields (FieldSpec objects)
+                field_dicts = []
+                for f in inventory.extracted_fields:
+                    field_dict = {
+                        "field_name": f.name,
+                        "field_type": f.data_type,
+                        "description": f.description or "",
+                        "example": None,
+                        "message_id": getattr(f, 'message_id', 'unknown'),
+                        "page": f.source_citation.page if f.source_citation else 0
+                    }
+                    field_dicts.append(field_dict)
+            
+            # Extract enum definitions
+            enums = extract_enums_from_fields(field_dicts)
+            
+            from loguru import logger
+            logger.info(f"Extracted {len(enums)} enum definitions for baseline report")
+            
+            if enums:
+                lines.append("")
+                lines.append(f"## Code/Enum Field Values ({len(enums)} fields)")
+                lines.append("")
+                lines.append("Valid values for code/enumeration fields:")
+                lines.append("")
+                
+                # Group by message for better organization
+                by_message = {}
+                for enum_def in enums:
+                    msg_id = enum_def.message_id
+                    if msg_id not in by_message:
+                        by_message[msg_id] = []
+                    by_message[msg_id].append(enum_def)
+                
+                for message_id in sorted(by_message.keys()):
+                    lines.append(f"### {message_id}")
+                    lines.append("")
+                    
+                    for enum_def in sorted(by_message[message_id], key=lambda e: e.field_name):
+                        lines.append(f"**`{enum_def.field_name}`** (Page {enum_def.page}):")
+                        
+                        for value in enum_def.values:
+                            default_mark = " *(default)*" if value.is_default else ""
+                            desc_mark = f" - {value.description}" if value.description else ""
+                            lines.append(f"  - `{value.value}`{default_mark}{desc_mark}")
+                        
+                        lines.append("")
+            
+        except Exception as e:
+            from loguru import logger
+            import traceback
+            logger.error(f"Failed to extract enum values: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return []
         
         return lines

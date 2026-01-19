@@ -238,6 +238,7 @@ def has_selectable_text(page: Page, bbox: Tuple[float, float, float, float]) -> 
 ❌ Losing image positions from original document
 ❌ Missing type hints
 ❌ Ignoring errors silently
+❌ Creating summary documents or status reports (unless explicitly requested)
 
 ## What to Always Do
 
@@ -254,6 +255,7 @@ def has_selectable_text(page: Page, bbox: Tuple[float, float, float, float]) -> 
 ✅ Check for text before OCR
 ✅ Track confidence scores
 ✅ Support human review with clear provenance
+✅ Respond directly without creating status/summary documents
 
 ---
 

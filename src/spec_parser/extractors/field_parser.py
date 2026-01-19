@@ -16,13 +16,14 @@ class FieldDefinition:
     """Represents a single field definition extracted from spec."""
     
     field_name: str
-    field_type: str  # Inferred type: string, datetime, int, float, bool
-    optionality: Optional[str]  # R (required), O (optional), N (not used)
-    description: str
-    example: Optional[str]
-    message_id: str  # Parent message (e.g., "HEL.R01")
-    page: int
-    citation_id: Optional[str]
+    field_type: str  # Inferred type: string, datetime, int, float, bool, code
+    optionality: Optional[str]  # R (required), O (optional), N (not used), C (conditional)
+    cardinality: Optional[str] = None  # [0..1], [1..1], [0..*], [1..*]
+    description: str = ""
+    example: Optional[str] = None
+    message_id: str = "unknown"  # Parent message (e.g., "HEL.R01")
+    page: int = 0
+    citation_id: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -30,6 +31,7 @@ class FieldDefinition:
             "field_name": self.field_name,
             "field_type": self.field_type,
             "optionality": self.optionality,
+            "cardinality": self.cardinality,
             "description": self.description,
             "example": self.example,
             "message_id": self.message_id,
@@ -66,6 +68,13 @@ class FieldTableParser:
         r"use",
         r"usage",
         r"req"
+    ]
+    
+    CARDINALITY_HEADERS = [
+        r"cardinality",
+        r"rep",
+        r"repetition",
+        r"occurs"
     ]
     
     def __init__(self):
@@ -155,6 +164,7 @@ class FieldTableParser:
         desc_col = self._find_column(headers, self.DESCRIPTION_HEADERS)
         example_col = self._find_column(headers, self.EXAMPLE_HEADERS)
         opt_col = self._find_column(headers, self.OPTIONALITY_HEADERS)
+        card_col = self._find_column(headers, self.CARDINALITY_HEADERS)
         
         if field_col is None:
             return fields  # Not a field table
@@ -171,7 +181,7 @@ class FieldTableParser:
                 continue
             
             # Check if we have enough columns
-            valid_cols = [c for c in [field_col, desc_col, example_col, opt_col] if c is not None]
+            valid_cols = [c for c in [field_col, desc_col, example_col, opt_col, card_col] if c is not None]
             if valid_cols and len(cells) <= max(valid_cols):
                 continue
             
@@ -179,6 +189,7 @@ class FieldTableParser:
             description = cells[desc_col] if desc_col is not None and desc_col < len(cells) else ""
             example = cells[example_col] if example_col is not None and example_col < len(cells) else None
             optionality = cells[opt_col] if opt_col is not None and opt_col < len(cells) else None
+            cardinality = cells[card_col] if card_col is not None and card_col < len(cells) else None
             
             # Skip empty or invalid rows
             if not field_name or field_name.lower() in ['field', 'name', '']:
@@ -191,6 +202,7 @@ class FieldTableParser:
                 field_name=field_name,
                 field_type=field_type,
                 optionality=optionality,
+                cardinality=cardinality,
                 description=description,
                 example=example,
                 message_id=parent_message,
