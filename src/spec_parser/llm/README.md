@@ -148,6 +148,34 @@ LLM_GLOBAL_CACHE=llm_corrections.db    # Global cache filename
 
 ## Correction Workflow
 
+### How Cache Ensures Quality
+
+**The cache uses deterministic hash-based lookup to guarantee correct outputs:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Step 1: LLM generates response                              │
+│    prompt_hash = SHA256(model + prompt_text)                 │
+│    INSERT INTO corrections (prompt_hash, original_response)  │
+│    is_verified = FALSE                                       │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Step 2: Human reviews and corrects                          │
+│    UPDATE corrections                                        │
+│    SET is_verified = TRUE, corrected_response = '...'        │
+│    WHERE prompt_hash = '...'                                 │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Step 3: Next run with same prompt                           │
+│    SELECT corrected_response FROM corrections                │
+│    WHERE prompt_hash = '...' AND is_verified = TRUE          │
+│    → Returns corrected response WITHOUT calling LLM          │
+│    → Increments hit_count for tracking                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### 1. Initial Extraction (May Be Imperfect)
 
 ```bash
@@ -156,7 +184,19 @@ spec-parser device extract-blueprint --device-id X --device-name Y --index-dir Z
 # → Stores LLM responses in config/llm_corrections.db (is_verified=False)
 ```
 
-### 2. Human Review
+### 2. Human Review (Interactive Script)
+
+```bash
+# Interactive review tool
+python examples/llm_correction_workflow.py
+
+# Shows each unverified correction:
+#   - Prompt text
+#   - LLM response
+#   - Options: Approve / Correct / Skip
+```
+
+Or programmatically:
 
 ```python
 from spec_parser.llm import CorrectionCache
@@ -186,6 +226,30 @@ for record in corrections:
 spec-parser device extract-blueprint --device-id X --device-name Y --index-dir Z
 # → Cache HIT on verified corrections
 # → Perfect output without re-calling LLM
+```
+
+**Log output will show:**
+```
+[MessageDiscovery] Cache HIT: abc12345... (hit_count=3, verified=True)
+[FieldExtraction[OBS.R01]] Cache HIT: def67890... (hit_count=2, verified=True)
+```
+
+### Verification Test
+
+Run automated test to confirm cache is working:
+
+```bash
+# Test cache workflow (creates test DB, verifies lookup works)
+python tests/test_llm_cache.py
+
+# Output shows:
+#   ✅ First call: Cache MISS → LLM called
+#   ✅ Correction: Saved to cache with is_verified=True
+#   ✅ Second call: Cache HIT → Returns correction without LLM
+#   ✅ Hit tracking: Increments hit_count
+
+# Inspect production cache
+python tests/test_llm_cache.py inspect
 ```
 
 ## Blueprint Schema
