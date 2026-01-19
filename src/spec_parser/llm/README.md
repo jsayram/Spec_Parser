@@ -23,6 +23,7 @@ PDF → JSON Sidecar → FAISS/BM25 Embeddings → [LLM Extraction] → Blueprin
    - No external dependencies (stdlib only)
 
 2. **Multi-Provider LLM Interface** (`providers/`)
+   - **HuggingFace** (`huggingface.py`): Direct model loading (no server), supports Qwen2.5-Coder, Phi-3.5
    - **Ollama** (`ollama.py`): Local Qwen2-Coder-7B, no rate limiting
    - **Anthropic** (`anthropic.py`): Claude 3.5 Sonnet, 60 req/min rate limit
    - **OpenAI** (`openai.py`): GPT-4o, 60 req/min rate limit
@@ -59,7 +60,28 @@ PDF → JSON Sidecar → FAISS/BM25 Embeddings → [LLM Extraction] → Blueprin
 
 ## Usage
 
-### Quick Start (Local Ollama)
+### Quick Start (HuggingFace - No Server Needed)
+
+```bash
+# 1. Install dependencies
+pip install transformers torch
+
+# 2. Configure .env
+echo "LLM_PROVIDER=huggingface" >> .env
+echo "LLM_MODEL=Qwen/Qwen2.5-Coder-7B-Instruct" >> .env
+
+# 3. Extract blueprint (model downloads automatically on first use)
+spec-parser device extract-blueprint \
+    --device-id Roche_CobasLiat \
+    --device-name "Roche cobas Liat Analyzer" \
+    --index-dir data/spec_output/20260118_180201_rochecobasliat/index
+
+# Output: data/spec_output/20260118_180201_rochecobasliat/blueprint.json
+```
+
+**See [docs/HUGGINGFACE_SETUP.md](../../../docs/HUGGINGFACE_SETUP.md) for detailed setup guide.**
+
+### Quick Start (Ollama Server)
 
 ```bash
 # 1. Start Ollama and pull model
@@ -108,9 +130,9 @@ provider = create_llm_provider(
 llm = LLMInterface(provider=provider)
 
 # Extract blueprint
-flow = BlueprintFlow(
-    device_id="Roche_CobasLiat",
-    device_name="Roche cobas Liat Analyzer",
+flow = BlueprintFlow(huggingface", "ollama", "anthropic", or "openai"
+LLM_MODEL=qwen2.5-coder:7b             # Model identifier (provider-specific)
+LLM_BASE_URL=http://localhost:11434   # Ollama base URL (ignored for huggingface)
     index_dir=Path("data/spec_output/.../index"),
     llm=llm
 )
@@ -140,6 +162,10 @@ LLM_TIMEOUT=120                        # Request timeout (seconds)
 # API Keys (for external providers)
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
+
+# HuggingFace Configuration (optional)
+# HF_HOME=/path/to/model/cache
+# HF_TOKEN=hf_...  # Only for gated models
 
 # Cache
 LLM_CACHE_DIR=config                   # Cache directory

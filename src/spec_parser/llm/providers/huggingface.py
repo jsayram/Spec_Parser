@@ -21,7 +21,7 @@ from typing import Optional
 
 from loguru import logger
 
-from .base import BaseLLMProvider
+from spec_parser.llm.providers import BaseLLMProvider
 
 
 class HuggingFaceProvider(BaseLLMProvider):
