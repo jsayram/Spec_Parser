@@ -9,6 +9,8 @@ from loguru import logger
 from spec_parser.llm.llm_interface import LLMInterface
 from spec_parser.llm.prompts import PromptTemplates
 from spec_parser.search.hybrid_search import HybridSearcher
+from spec_parser.search.faiss_indexer import FAISSIndexer
+from spec_parser.search.bm25_searcher import BM25Searcher
 
 
 class ExtractionNode:
@@ -110,8 +112,8 @@ class MessageDiscoveryNode(ExtractionNode):
         
         chunks = []
         for query in queries:
-            results = self.searcher.search(query, top_k=3)
-            chunks.extend([r["content"] for r in results])
+            results = self.searcher.search(query, k=3)
+            chunks.extend([r["text"] for r in results])
         
         context["discovery_chunks"] = chunks[:10]  # Limit to 10 best chunks
         logger.info(f"[{self.name}] Retrieved {len(context['discovery_chunks'])} context chunks")
@@ -177,9 +179,9 @@ class MessageFieldExtractionNode(ExtractionNode):
         """
         # Search for message-specific content
         query = f"{self.message_type} field definitions structure"
-        results = self.searcher.search(query, top_k=5)
+        results = self.searcher.search(query, k=5)
         
-        context["field_chunks"] = [r["content"] for r in results]
+        context["field_chunks"] = [r["text"] for r in results]
         logger.info(
             f"[{self.name}] Retrieved {len(context['field_chunks'])} chunks "
             f"for {self.message_type}"
@@ -245,8 +247,28 @@ class BlueprintFlow:
         # Initialize LLM
         self.llm = llm or LLMInterface()
         
-        # Initialize search
-        self.searcher = HybridSearcher(index_dir=index_dir)
+        # Load indexes
+        from spec_parser.embeddings.embedding_model import EmbeddingModel
+        
+        embedding_model = EmbeddingModel()
+        
+        faiss_path = index_dir / "faiss"
+        bm25_path = index_dir / "bm25"
+        
+        # Load FAISS index (classmethod)
+        faiss_indexer = FAISSIndexer.load(
+            index_path=faiss_path,
+            embedding_model=embedding_model
+        )
+        
+        # Load BM25 index (classmethod)
+        bm25_searcher = BM25Searcher.load(index_path=bm25_path)
+        
+        # Initialize hybrid search
+        self.searcher = HybridSearcher(
+            faiss_indexer=faiss_indexer,
+            bm25_searcher=bm25_searcher
+        )
         
         logger.info(f"Initialized BlueprintFlow for {device_name}")
 

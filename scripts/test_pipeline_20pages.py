@@ -18,6 +18,7 @@ from spec_parser.parsers.pymupdf_extractor import PyMuPDFExtractor
 from spec_parser.parsers.json_sidecar import JSONSidecarWriter
 from spec_parser.search.faiss_indexer import FAISSIndexer
 from spec_parser.search.bm25_searcher import BM25Searcher
+from spec_parser.embeddings.embedding_model import EmbeddingModel
 from spec_parser.llm import LLMInterface, BlueprintFlow
 from spec_parser.config import settings
 from datetime import datetime
@@ -46,10 +47,11 @@ def main():
     
     extracted_pages = []
     with PyMuPDFExtractor(PDF_PATH) as extractor:
-        logger.info(f"PDF has {extractor.page_count} pages total (processing {MAX_PAGES})")
+        total_pages = len(extractor.doc)
+        logger.info(f"PDF has {total_pages} pages total (processing {MAX_PAGES})")
         
-        for page_num in range(min(MAX_PAGES, extractor.page_count)):
-            logger.info(f"Extracting page {page_num + 1}/{MAX_PAGES}...")
+        for page_num in range(1, min(MAX_PAGES + 1, total_pages + 1)):
+            logger.info(f"Extracting page {page_num}/{MAX_PAGES}...")
             page_data = extractor.extract_page(page_num)
             extracted_pages.append(page_data)
     
@@ -59,8 +61,13 @@ def main():
     logger.info("Step 2: Writing JSON sidecar...")
     
     sidecar_path = output_dir / "sidecar.json"
-    writer = JSONSidecarWriter(sidecar_path)
-    writer.write(extracted_pages)
+    writer = JSONSidecarWriter()
+    writer.write_document(
+        page_bundles=extracted_pages,
+        output_path=sidecar_path,
+        pdf_name=PDF_PATH.stem,
+        pdf_path=PDF_PATH
+    )
     
     logger.info(f"✅ Wrote sidecar: {sidecar_path}")
     
@@ -70,32 +77,50 @@ def main():
     index_dir = output_dir / "index"
     index_dir.mkdir(exist_ok=True)
     
-    faiss_indexer = FAISSIndexer(index_dir=index_dir)
+    # Initialize embedding model
+    embedding_model = EmbeddingModel()
+    
+    # Initialize FAISS indexer
+    faiss_index_path = index_dir / "faiss.index"
+    faiss_indexer = FAISSIndexer(
+        embedding_model=embedding_model,
+        index_path=faiss_index_path
+    )
     
     # Extract text chunks for indexing
-    chunks = []
+    texts = []
+    metadatas = []
     for page in extracted_pages:
-        for block in page.get("blocks", []):
-            if block.get("type") == "text":
-                chunks.append({
-                    "text": block.get("text", ""),
-                    "page": page.get("page_num"),
-                    "bbox": block.get("bbox"),
-                    "source": "pdf"
-                })
+        page_num = page.page
+        # Get text blocks only
+        text_blocks = [b for b in page.blocks if b.type == "text"]
+        for block in text_blocks:
+            texts.append(block.content)
+            metadatas.append({
+                "page": page_num,
+                "bbox": block.bbox,
+                "source": "text",
+                "type": "text_block",
+                "citation": block.citation
+            })
     
-    logger.info(f"Indexing {len(chunks)} text chunks...")
-    faiss_indexer.build_index(chunks)
+    logger.info(f"Indexing {len(texts)} text chunks...")
+    faiss_indexer.add_texts(texts, metadatas)
+    faiss_indexer.save()
     
-    logger.info(f"✅ Built FAISS index: {index_dir}")
+    logger.info(f"✅ Built FAISS index: {faiss_index_path}")
     
     # Step 4: Build BM25 index
     logger.info("Step 4: Building BM25 index...")
     
-    bm25_searcher = BM25Searcher(index_dir=index_dir)
-    bm25_searcher.build_index(chunks)
+    bm25_index_path = index_dir / "bm25.pkl"
+    bm25_searcher = BM25Searcher(index_path=bm25_index_path)
     
-    logger.info(f"✅ Built BM25 index")
+    # Use same texts and metadatas
+    bm25_searcher.add_texts(texts, metadatas)
+    bm25_searcher.save()
+    
+    logger.info(f"✅ Built BM25 index: {bm25_index_path}")
     
     # Step 5: Run LLM blueprint extraction
     logger.info("Step 5: Running LLM blueprint extraction...")
