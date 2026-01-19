@@ -55,10 +55,12 @@ def device_commands():
 @click.option("--spec-version", help="Spec version (e.g., 3.3.1)")
 @click.option("--spec-pdf", type=click.Path(exists=True), help="Path to spec PDF")
 @click.option("--output-dir", default="data/spec_output", help="Output directory")
+@click.option("--max-pages", type=int, help="Maximum number of pages to extract (for testing)")
 @click.option("--extract-blueprint", is_flag=True, help="Automatically extract blueprint after indexing")
 def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional[str], 
                    device_name: Optional[str], spec_version: Optional[str], 
-                   spec_pdf: Optional[str], output_dir: str, extract_blueprint: bool):
+                   spec_pdf: Optional[str], output_dir: str, max_pages: Optional[int],
+                   extract_blueprint: bool):
     """
     Onboard new device type with initial spec version.
     
@@ -115,10 +117,12 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     settings.image_dir = images_dir
     
     logger.info("Extracting PDF with PyMuPDF + OCR...")
+    if max_pages:
+        logger.info(f"Limiting extraction to first {max_pages} pages")
     
     # Extract PDF and run OCR
     with PyMuPDFExtractor(spec_pdf_path) as extractor:
-        pages = extractor.extract_all_pages()
+        pages = extractor.extract_all_pages(max_pages=max_pages)
         
         # Run OCR on images (need to reopen PDF for page access)
         ocr_processor = OCRProcessor()
