@@ -608,6 +608,8 @@ def extract_blueprint(device_id: str, device_name: str, index_dir: str, output: 
         json.dump(blueprint, f, indent=2)
     
     logger.success(f"Blueprint saved: {output_path}")
-    logger.info(f"Summary: {blueprint['summary']}")
-    logger.info(f"Cache stats: {blueprint.get('cache_stats', {})}")
+    if 'summary' in blueprint:
+        logger.info(f"Summary: {blueprint['summary']}")
+    if 'cache_stats' in blueprint:
+        logger.info(f"Cache stats: {blueprint['cache_stats']}")
 

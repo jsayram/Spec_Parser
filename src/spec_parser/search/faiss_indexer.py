@@ -113,9 +113,12 @@ class FAISSIndexer:
         # Add to FAISS index
         self.index.add(embeddings)
         
-        # Store metadata
+        # Store metadata (always include text)
         if metadatas:
-            self.metadata.extend(metadatas)
+            # Add text to each metadata entry
+            for text, metadata in zip(texts, metadatas):
+                metadata_with_text = {**metadata, "text": text}
+                self.metadata.append(metadata_with_text)
         else:
             # Create default metadata
             self.metadata.extend([{"text": text} for text in texts])

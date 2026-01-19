@@ -14,17 +14,42 @@ from spec_parser.search.bm25_searcher import BM25Searcher
 
 
 def strip_markdown_json(text: str) -> str:
-    """Strip markdown code block markers from JSON response.
+    """Strip markdown code block markers and explanatory text from JSON response.
     
-    LLMs often wrap JSON in ```json ... ``` markers.
+    LLMs often wrap JSON in ```json ... ``` markers or add explanatory text.
     """
     text = text.strip()
-    if text.startswith("```json"):
-        text = text[7:]  # Remove ```json
-    elif text.startswith("```"):
-        text = text[3:]  # Remove ```
-    if text.endswith("```"):
-        text = text[:-3]  # Remove trailing ```
+    
+    # Find JSON block in markdown
+    if "```json" in text:
+        # Extract content between ```json and ```
+        start = text.find("```json") + 7
+        end = text.find("```", start)
+        if end != -1:
+            text = text[start:end]
+    elif "```" in text:
+        # Extract content between ``` and ```
+        start = text.find("```") + 3
+        end = text.find("```", start)
+        if end != -1:
+            text = text[start:end]
+    else:
+        # Try to find JSON array or object markers
+        # Look for first [ or { and last ] or }
+        start_bracket = text.find("[")
+        start_brace = text.find("{")
+        
+        if start_bracket != -1 and (start_brace == -1 or start_bracket < start_brace):
+            # Array
+            end = text.rfind("]")
+            if end != -1:
+                text = text[start_bracket:end+1]
+        elif start_brace != -1:
+            # Object
+            end = text.rfind("}")
+            if end != -1:
+                text = text[start_brace:end+1]
+    
     return text.strip()
 
 
