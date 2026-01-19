@@ -250,11 +250,11 @@ CRITICAL: Preserve ALL citations and field definitions. Do not drop any data."""
         return """You are an expert in POCT1-A (Point-of-Care Testing) protocol specifications.
 
 Your expertise includes:
-- HL7 v2.5.1 message structure and segments
-- POCT1-A and POCT1-A2 standard message types
-- Device interface specifications and LIS integration
-- Field data types (ST, NM, CE, TS, HD, etc.)
-- Vendor-specific message extensions
+- POCT1-A and POCT1-A2 standard message types (HELLO, OBS, RGT, DST, CONFG)
+- Device-to-LIS interface specifications and bidirectional communication
+- POCT1-A field patterns (_cd, _dttm, _dt, _tm, _id, _nm, _val, _unit)
+- Analyte codes, result values, and quality control data
+- Vendor-specific message extensions (Z-messages)
 
 Requirements for ALL responses:
 1. Extract information ONLY from provided context - never invent or assume
