@@ -15,6 +15,9 @@ from datetime import datetime
 from ..rlm.document_navigator import DocumentNavigator
 from ..parsers.json_sidecar import JSONSidecarWriter
 from ..schemas.citation import Citation
+from .field_parser import parse_fields_from_document, FieldDefinition
+from .message_schema_builder import build_message_schemas_from_document
+from ..schemas.poct1_entities import MessageDefinition as POCTMessageDefinition
 
 
 # TODO HL7 EXTENSION: Add protocol parameter to __init__
@@ -50,6 +53,10 @@ class MessageInventory:
     unrecognized_messages: List[MessageType] = field(default_factory=list)
     field_specs: List[FieldSpec] = field(default_factory=list)
     categories: Dict[str, List[str]] = field(default_factory=dict)
+    
+    # Phase 2 additions
+    message_schemas: Dict[str, POCTMessageDefinition] = field(default_factory=dict)
+    extracted_fields: List[FieldDefinition] = field(default_factory=list)
 
 
 class MessageParser:
@@ -140,7 +147,7 @@ class MessageParser:
         # Extract message types from content
         messages = self._extract_message_types(navigator)
         
-        # Extract field specifications from tables
+        # Extract field specifications from tables (old method)
         fields = self._extract_field_specs(navigator)
         
         # Categorize messages
@@ -153,12 +160,24 @@ class MessageParser:
         # Build category summary
         categories = self._build_category_summary(recognized, unrecognized)
         
+        # Phase 2: Extract detailed field definitions and build message schemas
+        document = self._load_document_json(json_sidecar_path)
+        extracted_fields = parse_fields_from_document(document)
+        message_schemas = build_message_schemas_from_document(document)
+        
         return MessageInventory(
             recognized_messages=recognized,
             unrecognized_messages=unrecognized,
             field_specs=fields,
-            categories=categories
+            categories=categories,
+            message_schemas=message_schemas,
+            extracted_fields=extracted_fields
         )
+    
+    def _load_document_json(self, json_path: Path) -> Dict:
+        """Load raw document JSON for Phase 2 field extraction."""
+        with open(json_path, 'r') as f:
+            return json.load(f)
     
     def _extract_message_types(self, navigator: DocumentNavigator) -> List[MessageType]:
         """Extract message types from document content."""

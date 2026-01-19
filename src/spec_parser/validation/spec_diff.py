@@ -384,7 +384,28 @@ class SpecChangeDetector:
                 lines.append(f"- **{msg.message_id}** {msg.direction} - {citations_str}")
         
         lines.append("\n## Field Specifications")
-        lines.append(f"**Total:** {len(inv.field_specs)} fields extracted")
+        lines.append(f"**Total:** {len(inv.field_specs)} legacy fields + {len(inv.extracted_fields)} detailed fields")
+        
+        # Add detailed field specifications per message
+        if inv.message_schemas:
+            lines.append("\n### Detailed Message Schemas")
+            for message_id, schema in sorted(inv.message_schemas.items()):
+                lines.append(f"\n#### {message_id}: {schema.description}")
+                lines.append(f"**Location:** Page {schema.source_citation.page}, Citation {schema.citation}")
+                
+                if schema.fields:
+                    lines.append(f"\n**Fields ({len(schema.fields)}):**")
+                    lines.append("\n| Field | Type | Opt | Description | Example |")
+                    lines.append("|-------|------|-----|-------------|---------|")
+                    
+                    for field in schema.fields:
+                        opt = field.optionality or "-"
+                        desc = (field.description[:50] + "...") if field.description and len(field.description) > 50 else (field.description or "-")
+                        lines.append(f"| `{field.name}` | {field.data_type} | {opt} | {desc} | - |")
+                else:
+                    lines.append("\n*No fields extracted for this message*")
+        else:
+            lines.append("\n*Phase 2 field extraction not yet complete*")
         
         lines.append("\n## No Comparison")
         lines.append("This is the initial onboarding - no previous version to compare.")
