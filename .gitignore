@@ -66,6 +66,11 @@ ENV/
 env.bak/
 venv.bak/
 
+# LLM correction cache (contains proprietary spec data)
+config/llm_corrections.db
+config/llm_corrections_*.db
+*.db
+
 # IDEs
 .vscode/
 .idea/

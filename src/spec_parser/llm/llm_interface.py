@@ -9,6 +9,7 @@ from spec_parser.config import settings
 from spec_parser.llm.cache import CorrectionCache
 from spec_parser.llm.providers import BaseLLMProvider
 from spec_parser.llm.providers.anthropic import AnthropicProvider
+from spec_parser.llm.providers.huggingface import HuggingFaceProvider
 from spec_parser.llm.providers.ollama import OllamaProvider
 from spec_parser.llm.providers.openai import OpenAIProvider
 from spec_parser.schemas.llm import LLMCorrectionRecord
@@ -149,7 +150,15 @@ def create_llm_provider(
     logger.info(f"Creating LLM provider: {provider_name} with model {model}")
     
     # Create provider based on name
-    if provider_name == "ollama":
+    if provider_name == "huggingface":
+        provider = HuggingFaceProvider(
+            model=model,
+            device="auto",  # Auto-detect best device (CUDA/MPS/CPU)
+            temperature=settings.llm_temperature,
+            max_tokens=settings.llm_max_tokens,
+            **kwargs
+        )
+    elif provider_name == "ollama":
         provider = OllamaProvider(
             model=model,
             base_url=settings.llm_base_url,
@@ -177,7 +186,7 @@ def create_llm_provider(
     else:
         raise ValueError(
             f"Unknown LLM provider: {provider_name}. "
-            f"Supported: ollama, anthropic, openai"
+            "Supported: ollama, huggingface, anthropic, openai"
         )
     
     # Check if provider is available

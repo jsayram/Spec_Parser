@@ -51,9 +51,9 @@ class Settings(BaseSettings):
     rlm_neighbors_count: int = 3  # Number of neighbor spans to retrieve
     
     # LLM settings
-    llm_provider: str = "ollama"  # "ollama", "anthropic", or "openai"
+    llm_provider: str = "ollama"  # "huggingface", "ollama", "anthropic", or "openai"
     llm_model: str = "qwen2.5-coder:7b"  # Model identifier
-    llm_base_url: str = "http://localhost:11434"  # Ollama base URL
+    llm_base_url: str = "http://localhost:11434"  # Ollama base URL (ignored for huggingface)
     llm_temperature: float = 0.0  # Deterministic generation
     llm_max_tokens: int = 4000  # Maximum response tokens
     llm_rate_limit: float = 1.0  # Requests per second for external APIs
