@@ -13,6 +13,7 @@ import click
 from loguru import logger
 import pymupdf
 
+from ...config import settings
 from ...parsers.pymupdf_extractor import PyMuPDFExtractor
 from ...parsers.ocr_processor import OCRProcessor
 from ...parsers.json_sidecar import JSONSidecarWriter
@@ -103,6 +104,11 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     version_dir = output_base / f"{timestamp}_{vendor.lower()}{model.lower()}"
     version_dir.mkdir(parents=True, exist_ok=True)
     
+    # Create images directory within version_dir and update settings
+    images_dir = version_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    settings.image_dir = images_dir
+    
     logger.info("Extracting PDF with PyMuPDF + OCR...")
     
     # Extract PDF and run OCR
@@ -149,8 +155,15 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     metadatas = []
     for page_bundle in pages:
         for block in page_bundle.blocks:
-            if hasattr(block, 'markdown') and block.markdown:
-                texts.append(block.markdown)
+            # Handle different block types with their specific content fields
+            text_content = None
+            if block.type == "text" and hasattr(block, 'content') and block.content:
+                text_content = block.content
+            elif block.type == "table" and hasattr(block, 'markdown_table') and block.markdown_table:
+                text_content = block.markdown_table
+            
+            if text_content:
+                texts.append(text_content)
                 metadatas.append({
                     "page": page_bundle.page,
                     "bbox": block.bbox,
@@ -182,7 +195,7 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
         device_type=device_id
     )
     
-    report_path = detector.generate_report(diff, device_id, vendor, model)
+    report_path = detector.generate_report(diff, device_id, vendor, model, session_dir=version_dir)
     
     # Build message summary
     inv = diff.new_inventory
@@ -205,7 +218,7 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
                 "direction": msg.direction,
                 "page": citation.page,
                 "bbox": citation.bbox,
-                "block_id": citation.block_id,
+                "citation_id": citation.citation_id,
                 "source": citation.source
             })
     
@@ -301,6 +314,11 @@ def update_device_spec(config: Optional[str], device_type: Optional[str],
     version_dir = output_base / f"{timestamp}_{vendor.lower()}{model.lower()}"
     version_dir.mkdir(parents=True, exist_ok=True)
     
+    # Create images directory within version_dir and update settings
+    images_dir = version_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    settings.image_dir = images_dir
+    
     logger.info("Extracting new spec version...")
     
     # Extract PDF
@@ -338,7 +356,7 @@ def update_device_spec(config: Optional[str], device_type: Optional[str],
     )
     
     # Generate change report
-    report_path = detector.generate_report(diff, device_type, vendor, model)
+    report_path = detector.generate_report(diff, device_type, vendor, model, session_dir=version_dir)
     
     logger.info(f"Change report: {report_path}")
     

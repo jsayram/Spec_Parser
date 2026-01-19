@@ -254,12 +254,21 @@ class PyMuPDFExtractor:
         blocks = []
         drawings = page.get_drawings()
 
+        # Minimum size threshold to filter out borders/lines
+        MIN_DIMENSION_PX = 20
+
         # Group drawings by proximity (simplified - just use individual drawings)
         for idx, drawing in enumerate(drawings):
             # Get bbox from drawing
             rect = drawing.get("rect")
             if rect:
                 bbox = tuple(rect)
+                
+                # Filter out small graphics (likely table borders/lines)
+                width = bbox[2] - bbox[0]
+                height = bbox[3] - bbox[1]
+                if width < MIN_DIMENSION_PX or height < MIN_DIMENSION_PX:
+                    continue
 
                 blocks.append(
                     GraphicsBlock(

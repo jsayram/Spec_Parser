@@ -47,8 +47,15 @@ class MarkdownPipeline:
             markdown_lines.append(f"\n# Page {page_bundle.page}\n")
             
             for block in page_bundle.blocks:
-                if hasattr(block, 'markdown') and block.markdown:
-                    markdown_lines.append(block.markdown)
+                # Handle different block types with their specific content fields
+                if block.type == "text" and hasattr(block, 'content') and block.content:
+                    markdown_lines.append(block.content)
+                    markdown_lines.append("\n")
+                elif block.type == "table" and hasattr(block, 'markdown_table') and block.markdown_table:
+                    markdown_lines.append(block.markdown_table)
+                    markdown_lines.append("\n")
+                elif block.type == "picture" and hasattr(block, 'image_ref') and block.image_ref:
+                    markdown_lines.append(f"![{block.image_ref}]({block.image_ref})")
                     markdown_lines.append("\n")
         
         return "\n".join(markdown_lines)

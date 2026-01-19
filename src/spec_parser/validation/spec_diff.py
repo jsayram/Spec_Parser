@@ -306,7 +306,8 @@ class SpecChangeDetector:
         diff: SpecDiff,
         device_type: str,
         vendor: str,
-        model: str
+        model: str,
+        session_dir: Optional[Path] = None
     ) -> Path:
         """
         Generate change report markdown file.
@@ -316,6 +317,7 @@ class SpecChangeDetector:
             device_type: Device type identifier
             vendor: Vendor name
             model: Model name
+            session_dir: Optional session directory to save reports in
         
         Returns:
             Path to generated report
@@ -333,8 +335,11 @@ class SpecChangeDetector:
             else:
                 content = self._generate_change_report(diff, vendor, model)
         
-        # Save report
-        report_path = self.output_dir / f"{vendor}_{model}_v{diff.new_version}" / filename
+        # Save report - use session_dir/reports if provided, otherwise fallback to device version dir
+        if session_dir:
+            report_path = session_dir / "reports" / filename
+        else:
+            report_path = self.output_dir / f"{vendor}_{model}_v{diff.new_version}" / filename
         report_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(report_path, 'w') as f:
