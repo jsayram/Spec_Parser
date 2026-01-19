@@ -151,7 +151,7 @@ def main():
     print("PIPELINE TEST COMPLETE")
     print("=" * 70)
     print(f"\nPages processed: {len(extracted_pages)}")
-    print(f"Text chunks indexed: {len(chunks)}")
+    print(f"Text chunks indexed: {len(texts)}")
     print(f"Output directory: {output_dir}")
     print(f"Blueprint: {blueprint_path}")
     

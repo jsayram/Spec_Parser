@@ -13,6 +13,21 @@ from spec_parser.search.faiss_indexer import FAISSIndexer
 from spec_parser.search.bm25_searcher import BM25Searcher
 
 
+def strip_markdown_json(text: str) -> str:
+    """Strip markdown code block markers from JSON response.
+    
+    LLMs often wrap JSON in ```json ... ``` markers.
+    """
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]  # Remove ```json
+    elif text.startswith("```"):
+        text = text[3:]  # Remove ```
+    if text.endswith("```"):
+        text = text[:-3]  # Remove trailing ```
+    return text.strip()
+
+
 class ExtractionNode:
     """Base class for extraction nodes (PocketFlow-inspired)."""
 
@@ -141,13 +156,15 @@ class MessageDiscoveryNode(ExtractionNode):
             message_type="discovery"
         )
         
-        # Parse JSON response
+        # Parse JSON response (strip markdown if present)
         try:
-            messages = json.loads(response)
+            cleaned_response = strip_markdown_json(response)
+            messages = json.loads(cleaned_response)
             context["discovered_messages"] = messages
             logger.info(f"[{self.name}] Discovered {len(messages)} messages")
         except json.JSONDecodeError as e:
             logger.error(f"[{self.name}] Failed to parse LLM response: {e}")
+            logger.debug(f"[{self.name}] Raw response: {response[:200]}...")
             context["discovered_messages"] = []
         
         return context
@@ -211,13 +228,15 @@ class MessageFieldExtractionNode(ExtractionNode):
             message_type=self.message_type
         )
         
-        # Parse JSON response
+        # Parse JSON response (strip markdown if present)
         try:
-            fields = json.loads(response)
+            cleaned_response = strip_markdown_json(response)
+            fields = json.loads(cleaned_response)
             context["fields"] = fields
             logger.info(f"[{self.name}] Extracted {len(fields)} fields")
         except json.JSONDecodeError as e:
             logger.error(f"[{self.name}] Failed to parse fields: {e}")
+            logger.debug(f"[{self.name}] Raw response: {response[:200]}...")
             context["fields"] = []
         
         return context
