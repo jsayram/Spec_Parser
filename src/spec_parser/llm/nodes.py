@@ -142,18 +142,18 @@ class MessageDiscoveryNode(ExtractionNode):
         """
         device_name = context["device_name"]
         
-        # Search for message type definitions with broader queries
+        # Search for message discovery with POCT1-A specific patterns
         queries = [
-            "message type supported device interface",
-            "R01 R02 R03 message structure",
-            "OBR OBX MSH PID segment",
-            "host device communication protocol",
-            "message format specification",
-            "HL7 POCT1-A messages",
-            "query response acknowledgment",
-            "observation result patient QC",
-            "Table message fields",
-            "supported message list"
+            "POCT1-A message type supported",
+            "HELLO OBS RGT DST CONFG message",
+            "device LIS bidirectional communication",
+            "message structure protocol",
+            "observation result reagent status",
+            "acknowledgment query response",
+            "device discovery initialization",
+            "supported message list table",
+            "message flow diagram",
+            "vendor extension Z message"
         ]
         
         chunks = []

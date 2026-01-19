@@ -23,27 +23,28 @@ class PromptTemplates:
 
 Your task: Extract ALL POCT1-A message types mentioned in this specification.
 
-Look for messages in these formats:
-- Three-letter codes: MSH, PID, OBR, OBX, ORC, NTE, etc.
-- Versioned messages: OBS.R01, OBS.R02, QCN.J01, OPL.O21, ACK.R01, etc.
-- Event codes: R01, R02, R03, J01, O21, etc.
-- Segment names: Message Segment, Header Segment, Observation Segment
-- Protocol messages: Query, Response, Acknowledgment, Result
-- Vendor extensions: Any custom message types
+POCT1-A core message types to look for:
+- HELLO / HELLO.R01: Device discovery and initialization (bidirectional)
+- OBS / OBS.R01: Observation results from device to LIS
+- RGT / RGT.R01: Reagent information and lot tracking
+- DST / DST.R01: Device status and error reporting
+- CONFG / CONFG.R01: Configuration and settings
+- ACK: Acknowledgment messages
+- QCN: Quality control messages
+- Vendor extensions: Messages starting with 'Z' (e.g., ZMKY, ZBAN, ZORD)
 
 Common POCT1-A patterns to look for:
 - "supported messages", "message type", "message structure"
-- Tables listing message names with R01, R02 suffixes
+- Tables listing POCT1-A message names (HELLO, OBS, RGT, DST, CONFG)
 - Message flow diagrams showing Device→LIS or LIS→Device
-- Segment descriptions (MSH, PID, OBR, OBX, NTE, ORC)
-- HL7 message types: OBS^R01, QCN^J01, OPL^O21
-- Query/Response pairs
+- Protocol handshake descriptions
+- Query/Response/Acknowledgment patterns
 
 Context from specification:
 {context}
 
 Return a JSON array with ALL message types found. For each:
-- message_type: The message identifier (e.g., "OBS.R01", "MSH", "PID", "OBR")
+- message_type: The POCT1-A message identifier (e.g., "HELLO.R01", "OBS", "RGT")
 - direction: "device_to_lis", "lis_to_device", or "bidirectional"
 - description: Brief description from spec
 - citations: Array of page numbers where found (e.g., ["p12", "p45"])
@@ -51,26 +52,26 @@ Return a JSON array with ALL message types found. For each:
 Example output:
 [
   {{
-    "message_type": "OBS.R01",
-    "direction": "device_to_lis",
-    "description": "Unsolicited observation result message",
+    "message_type": "HELLO.R01",
+    "direction": "bidirectional",
+    "description": "Device discovery and initialization",
     "citations": ["p12", "p45"]
   }},
   {{
-    "message_type": "MSH",
-    "direction": "bidirectional",
-    "description": "Message header segment",
+    "message_type": "OBS",
+    "direction": "device_to_lis",
+    "description": "Observation result message",
     "citations": ["p20"]
   }},
   {{
-    "message_type": "PID",
+    "message_type": "RGT",
     "direction": "device_to_lis",
-    "description": "Patient identification segment",
+    "description": "Reagent lot information",
     "citations": ["p25"]
   }}
 ]
 
-IMPORTANT: Extract EVERY message and segment type mentioned. Include HL7 segments (MSH, PID, OBR, OBX, etc.) and full messages (OBS.R01, QCN.J01, etc.)."""
+IMPORTANT: Extract ONLY POCT1-A message types. Do NOT include HL7 segment names (MSH, PID, OBR, OBX)."""
 
     @staticmethod
     def message_field_extraction(
@@ -95,10 +96,16 @@ IMPORTANT: Extract EVERY message and segment type mentioned. Include HL7 segment
 Context from specification:
 {context}
 
-Extract ALL field definitions for this message. For each field include:
-- field_name: Field identifier (e.g., "MSH-7", "OBX-3", "PID-5")
+Extract ALL field definitions for this message. Look for POCT1-A field patterns:
+- Field names with extensions: _cd, _dttm, _dt, _tm, _id, _nm, _val, _unit
+- Analyte identifiers and types
+- Enum values and allowed codes
+- Field segments and hierarchies
+
+For each field include:
+- field_name: Field identifier (e.g., "analyte_cd", "result_val", "collection_dttm")
 - field_description: What this field contains
-- data_type: Data type (e.g., "ST", "NM", "CE", "TS", "HD")
+- data_type: Data type (e.g., "string", "number", "datetime", "enum")
 - optionality: "required", "optional", or "conditional"
 - max_length: Maximum field length (if specified)
 - allowed_values: Array of allowed values or codes (if enumerated)
@@ -108,24 +115,34 @@ Extract ALL field definitions for this message. For each field include:
 Return JSON array. Example:
 [
   {{
-    "field_name": "MSH-7",
-    "field_description": "Date/Time of Message",
-    "data_type": "TS",
+    "field_name": "analyte_cd",
+    "field_description": "Analyte code identifier",
+    "data_type": "string",
     "optionality": "required",
-    "max_length": null,
-    "allowed_values": [],
-    "usage_notes": "Format: YYYYMMDDHHmmss",
+    "max_length": 20,
+    "allowed_values": ["GLU", "HbA1c", "CHOL"],
+    "usage_notes": "Device-specific analyte codes",
     "citations": ["p15"]
   }},
   {{
-    "field_name": "OBX-3",
-    "field_description": "Observation Identifier",
-    "data_type": "CE",
+    "field_name": "result_val",
+    "field_description": "Numeric result value",
+    "data_type": "number",
     "optionality": "required",
-    "max_length": 250,
-    "allowed_values": ["GLU^Glucose", "HbA1c^Hemoglobin A1c"],
-    "usage_notes": "LOINC codes preferred",
-    "citations": ["p23", "p67"]
+    "max_length": null,
+    "allowed_values": [],
+    "usage_notes": "Floating point, precision depends on analyte",
+    "citations": ["p23"]
+  }},
+  {{
+    "field_name": "collection_dttm",
+    "field_description": "Sample collection date and time",
+    "data_type": "datetime",
+    "optionality": "optional",
+    "max_length": null,
+    "allowed_values": [],
+    "usage_notes": "ISO 8601 format",
+    "citations": ["p30"]
   }}
 ]
 
@@ -156,15 +173,19 @@ Context:
 
 Return a JSON object with:
 - message_type: "{message_type}"
-- examples: Array of example message strings (exactly as shown in spec)
+- examples: Array of example message objects (exactly as shown in spec, typically JSON or XML format for POCT1-A)
 - citations: Page numbers where examples were found
 
 Example output:
 {{
-  "message_type": "OBS.R01",
+  "message_type": "OBS",
   "examples": [
-    "MSH|^~\\&|Sofia|Quidel||||20210115103045||OBS^R01|12345|P|2.5.1",
-    "PID|||P123456||Doe^John^A||19800101|M"
+    {{
+      "analyte_cd": "GLU",
+      "result_val": 95.5,
+      "result_unit": "mg/dL",
+      "collection_dttm": "2021-01-15T10:30:45Z"
+    }}
   ],
   "citations": ["p25", "Appendix A"]
 }}
