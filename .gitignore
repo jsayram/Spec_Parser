@@ -138,5 +138,6 @@ models/
 
 # Data directory (input PDFs and parsing outputs)
 data/
+!data/README.md
 !data/specs/.gitkeep
 !data/spec_output/.gitkeep
