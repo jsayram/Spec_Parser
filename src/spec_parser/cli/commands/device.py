@@ -172,12 +172,56 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     
     if texts:
         faiss_indexer.add_texts(texts, metadatas)
-        faiss_indexer.save()
         logger.info(f"Indexed {len(texts)} text blocks")
     
-    # Build BM25 index
+    # Extract and index field definitions with metadata
+    logger.info("Extracting and indexing field definitions...")
+    from ...extractors.field_parser import parse_fields_from_document
+    from ...utils.file_handler import read_json
+    
+    # Load raw JSON document (not PageBundle objects)
+    document_json = read_json(json_path)
+    fields = parse_fields_from_document(document_json)
+    
+    if fields:
+        field_texts = []
+        field_metadatas = []
+        
+        for field in fields:
+            # Create searchable text representation with all field info
+            field_text = (
+                f"Field: {field.field_name} | "
+                f"Type: {field.field_type} | "
+                f"Message: {field.message_id} | "
+                f"Description: {field.description or 'N/A'}"
+            )
+            if field.example:
+                field_text += f" | Example: {field.example}"
+            
+            field_texts.append(field_text)
+            field_metadatas.append({
+                "page": field.page,
+                "type": "field",
+                "field_name": field.field_name,
+                "field_type": field.field_type,
+                "message_id": field.message_id,
+                "optionality": field.optionality,
+                "citation_id": field.citation_id
+            })
+        
+        faiss_indexer.add_texts(field_texts, field_metadatas)
+        logger.info(f"Indexed {len(fields)} field definitions")
+    
+    faiss_indexer.save()
+    
+    # Build BM25 index with both text blocks and fields
     bm25_searcher = BM25Searcher(index_dir / "bm25.index")
     bm25_searcher.add_texts(texts, metadatas)
+    
+    if fields:
+        bm25_searcher.add_texts(field_texts, field_metadatas)
+        logger.info(f"Added {len(fields)} fields to BM25 index")
+    
     bm25_searcher.save()
     logger.info("BM25 index built")
     
