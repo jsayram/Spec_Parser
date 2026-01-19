@@ -489,9 +489,55 @@ PDF hash comparison shows no modifications.
                     cit_str = ", ".join([f"Page {c['page']}" for c in citations])
                     lines.append(f"- **{msg_id}** ({len(citations)}× - {cit_str})")
         
-        lines.append("\n## Review Command")
+        # Add review instructions with examples
+        lines.append("\n## How to Review")
+        lines.append("")
+        lines.append("| Action | When to Use |")
+        lines.append("|--------|-------------|")
+        lines.append("| `approve` | Valid vendor-specific message, add to device profile |")
+        lines.append("| `reject` | Extraction error (e.g., field name mistaken for message) |")
+        lines.append("| `defer` | Needs investigation, keep in pending queue |")
+        
+        # Generate example commands using actual data
+        lines.append("\n## Example Commands")
         lines.append("```bash")
-        lines.append("spec-parser review-message --device-type <name> --message <id> --action approve|reject|defer --notes \"...\"")
+        
+        # Use first device and first message as example
+        first_device = next(iter(custom_msgs.keys()), "<device_type>")
+        first_pending = None
+        for device_type, messages in custom_msgs.items():
+            for msg_id, msg_data in messages.items():
+                if msg_data.get("review_status") == "pending":
+                    first_pending = (device_type, msg_id)
+                    break
+            if first_pending:
+                break
+        
+        if first_pending:
+            dev, msg = first_pending
+            lines.append(f"# Approve as valid vendor message")
+            lines.append(f"spec-parser device review-message \\")
+            lines.append(f"  --device-type {dev} \\")
+            lines.append(f"  --message {msg} \\")
+            lines.append(f"  --action approve \\")
+            lines.append(f"  --notes \"Confirmed vendor-specific message\"")
+            lines.append("")
+            lines.append(f"# Reject as extraction error")
+            lines.append(f"spec-parser device review-message \\")
+            lines.append(f"  --device-type {dev} \\")
+            lines.append(f"  --message {msg} \\")
+            lines.append(f"  --action reject \\")
+            lines.append(f"  --notes \"Not a message - field name extracted in error\"")
+            lines.append("")
+            lines.append(f"# Defer for later investigation")
+            lines.append(f"spec-parser device review-message \\")
+            lines.append(f"  --device-type {dev} \\")
+            lines.append(f"  --message {msg} \\")
+            lines.append(f"  --action defer \\")
+            lines.append(f"  --notes \"Need to verify against POCT1-A2 standard\"")
+        else:
+            lines.append("spec-parser device review-message --device-type <name> --message <id> --action approve|reject|defer --notes \"...\"")
+        
         lines.append("```")
         
         with open(report_path, 'w') as f:
