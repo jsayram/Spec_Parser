@@ -78,7 +78,47 @@ def check_llm_config():
     checks_passed = True
     
     # Check provider-specific requirements
-    if settings.llm_provider == "ollama":
+    if settings.llm_provider == "huggingface":
+        print(f"\nModel: {settings.llm_model}")
+        
+        # Check dependencies
+        try:
+            import torch
+            import transformers
+            print(f"{check_icon(True)} transformers installed: {transformers.__version__}")
+            print(f"{check_icon(True)} torch installed: {torch.__version__}")
+            
+            # Check device availability
+            if torch.cuda.is_available():
+                print(f"{check_icon(True)} CUDA GPU available: {torch.cuda.get_device_name(0)}")
+                print(f"   VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                print(f"{check_icon(True)} Apple Silicon GPU (MPS) available")
+            else:
+                print(f"{check_icon(True)} CPU only (GPU not detected)")
+                print("   Note: GPU recommended for faster inference")
+            
+            # Check cache directory
+            hf_home = os.getenv("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+            print(f"\nModel cache: {hf_home}")
+            if Path(hf_home).exists():
+                print(f"{check_icon(True)} Cache directory exists")
+            else:
+                print(f"{check_icon(False)} Cache directory not found (will be created on first use)")
+            
+            # Check token (optional)
+            hf_token = os.getenv("HF_TOKEN")
+            if hf_token:
+                print(f"{check_icon(True)} HF_TOKEN is set (for gated models)")
+            else:
+                print("   HF_TOKEN not set (only needed for gated models)")
+            
+        except ImportError as e:
+            print(f"{check_icon(False)} Missing dependencies: {e}")
+            print("\n   Install with: pip install transformers torch")
+            checks_passed = False
+    
+    elif settings.llm_provider == "ollama":
         print(f"\nOllama Base URL: {settings.llm_base_url}")
         
         # Test Ollama connection
