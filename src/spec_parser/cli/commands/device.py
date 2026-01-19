@@ -55,9 +55,10 @@ def device_commands():
 @click.option("--spec-version", help="Spec version (e.g., 3.3.1)")
 @click.option("--spec-pdf", type=click.Path(exists=True), help="Path to spec PDF")
 @click.option("--output-dir", default="data/spec_output", help="Output directory")
+@click.option("--extract-blueprint", is_flag=True, help="Automatically extract blueprint after indexing")
 def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional[str], 
                    device_name: Optional[str], spec_version: Optional[str], 
-                   spec_pdf: Optional[str], output_dir: str):
+                   spec_pdf: Optional[str], output_dir: str, extract_blueprint: bool):
     """
     Onboard new device type with initial spec version.
     
@@ -288,6 +289,40 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     logger.info(f"Report: {report_path}")
     logger.info(f"Messages: {message_summary.field_count} fields, "
                 f"{message_summary.unrecognized_count} unrecognized")
+    
+    # Automatically extract blueprint if requested
+    if extract_blueprint:
+        logger.info("=" * 70)
+        logger.info("Extracting blueprint with LLM...")
+        logger.info("=" * 70)
+        
+        try:
+            from ...llm.llm_interface import LLMInterface
+            from ...llm.nodes import BlueprintFlow
+            
+            llm = LLMInterface()
+            flow = BlueprintFlow(
+                device_id=device_id,
+                device_name=device_name,
+                index_dir=index_dir,
+                llm=llm
+            )
+            
+            blueprint = flow.run()
+            
+            # Save blueprint
+            blueprint_path = version_dir / "blueprint.json"
+            with open(blueprint_path, 'w') as f:
+                json.dump(blueprint, f, indent=2)
+            
+            logger.success(f"Blueprint saved: {blueprint_path}")
+            if 'summary' in blueprint:
+                logger.info(f"Summary: {blueprint['summary']}")
+            
+        except Exception as e:
+            logger.error(f"Blueprint extraction failed: {e}")
+            logger.warning("Device onboarded successfully, but blueprint extraction encountered an error")
+            logger.exception(e)
 
 
 @device_commands.command(name="update")
