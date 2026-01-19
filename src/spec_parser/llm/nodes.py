@@ -142,20 +142,32 @@ class MessageDiscoveryNode(ExtractionNode):
         """
         device_name = context["device_name"]
         
-        # Search for message type definitions
+        # Search for message type definitions with broader queries
         queries = [
-            "POCT1-A message types",
-            "supported messages",
-            "message definitions",
-            "OBS QCN HELLO DST RGT"
+            "message type supported device interface",
+            "R01 R02 R03 message structure",
+            "OBR OBX MSH PID segment",
+            "host device communication protocol",
+            "message format specification",
+            "HL7 POCT1-A messages",
+            "query response acknowledgment",
+            "observation result patient QC",
+            "Table message fields",
+            "supported message list"
         ]
         
         chunks = []
+        seen_texts = set()
         for query in queries:
-            results = self.searcher.search(query, k=3)
-            chunks.extend([r["text"] for r in results])
+            results = self.searcher.search(query, k=5)
+            for r in results:
+                text = r["text"]
+                # Deduplicate by content
+                if text not in seen_texts:
+                    chunks.append(text)
+                    seen_texts.add(text)
         
-        context["discovery_chunks"] = chunks[:10]  # Limit to 10 best chunks
+        context["discovery_chunks"] = chunks[:20]  # Increase to 20 best chunks
         logger.info(f"[{self.name}] Retrieved {len(context['discovery_chunks'])} context chunks")
         
         return context

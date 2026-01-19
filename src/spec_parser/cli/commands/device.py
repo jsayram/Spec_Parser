@@ -83,7 +83,12 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
         logger.error("Missing required parameters. Provide --config or all of: --vendor, --model, --device-name, --spec-version, --spec-pdf")
         sys.exit(1)
     
+    # Start timing
+    from time import time
+    pipeline_start = time()
+    
     logger.info(f"Onboarding device: {vendor} {model} v{spec_version}")
+    logger.info(f"Pipeline started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     spec_pdf_path = Path(spec_pdf)
     output_base = Path(output_dir)
@@ -100,7 +105,6 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     pdf_hash = compute_file_hash(spec_pdf_path)
     
     # Create version-specific output directory
-    from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     version_dir = output_base / f"{timestamp}_{vendor.lower()}{model.lower()}"
     version_dir.mkdir(parents=True, exist_ok=True)
@@ -323,6 +327,17 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
             logger.error(f"Blueprint extraction failed: {e}")
             logger.warning("Device onboarded successfully, but blueprint extraction encountered an error")
             logger.exception(e)
+    
+    # End timing and display metrics
+    pipeline_end = time()
+    total_time = pipeline_end - pipeline_start
+    minutes = int(total_time // 60)
+    seconds = total_time % 60
+    
+    logger.info("=" * 70)
+    logger.success(f"PIPELINE COMPLETE - Total time: {minutes}m {seconds:.2f}s")
+    logger.info(f"Pipeline ended at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("=" * 70)
 
 
 @device_commands.command(name="update")

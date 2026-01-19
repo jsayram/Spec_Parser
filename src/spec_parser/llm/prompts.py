@@ -23,37 +23,54 @@ class PromptTemplates:
 
 Your task: Extract ALL POCT1-A message types mentioned in this specification.
 
-POCT1-A message types include:
-- Core messages: HELLO, DST, OBS, QCN, RGT, EOT, ACK, REQ, CONFG
-- HL7-based: OBS.R01, OBS.R03, QCN.J01, OPL.O21, etc.
-- Vendor-specific: Messages starting with 'Z' (e.g., ZMKY, ZBAN)
+Look for messages in these formats:
+- Three-letter codes: MSH, PID, OBR, OBX, ORC, NTE, etc.
+- Versioned messages: OBS.R01, OBS.R02, QCN.J01, OPL.O21, ACK.R01, etc.
+- Event codes: R01, R02, R03, J01, O21, etc.
+- Segment names: Message Segment, Header Segment, Observation Segment
+- Protocol messages: Query, Response, Acknowledgment, Result
+- Vendor extensions: Any custom message types
+
+Common POCT1-A patterns to look for:
+- "supported messages", "message type", "message structure"
+- Tables listing message names with R01, R02 suffixes
+- Message flow diagrams showing Device→LIS or LIS→Device
+- Segment descriptions (MSH, PID, OBR, OBX, NTE, ORC)
+- HL7 message types: OBS^R01, QCN^J01, OPL^O21
+- Query/Response pairs
 
 Context from specification:
 {context}
 
-Return a JSON array of message types found. For each message include:
-- message_type: The message identifier (e.g., "OBS.R01", "HELLO", "ZMKY")
+Return a JSON array with ALL message types found. For each:
+- message_type: The message identifier (e.g., "OBS.R01", "MSH", "PID", "OBR")
 - direction: "device_to_lis", "lis_to_device", or "bidirectional"
 - description: Brief description from spec
-- citations: Array of page numbers or section references where this message was found
+- citations: Array of page numbers where found (e.g., ["p12", "p45"])
 
 Example output:
 [
   {{
     "message_type": "OBS.R01",
     "direction": "device_to_lis",
-    "description": "Observation result message for patient tests",
+    "description": "Unsolicited observation result message",
     "citations": ["p12", "p45"]
   }},
   {{
-    "message_type": "HELLO",
+    "message_type": "MSH",
     "direction": "bidirectional",
-    "description": "Device discovery and initialization",
-    "citations": ["p8"]
+    "description": "Message header segment",
+    "citations": ["p20"]
+  }},
+  {{
+    "message_type": "PID",
+    "direction": "device_to_lis",
+    "description": "Patient identification segment",
+    "citations": ["p25"]
   }}
 ]
 
-CRITICAL: Only extract messages explicitly mentioned in the specification. Do not invent or assume messages."""
+IMPORTANT: Extract EVERY message and segment type mentioned. Include HL7 segments (MSH, PID, OBR, OBX, etc.) and full messages (OBS.R01, QCN.J01, etc.)."""
 
     @staticmethod
     def message_field_extraction(
