@@ -477,3 +477,75 @@ def list_devices():
     for device_id in devices:
         device = registry.get_device(device_id)
         logger.info(f"  {device_id}: {device.device_name} (v{device.current_version})")
+
+
+@device_commands.command(name="extract-blueprint")
+@click.option("--device-id", required=True, help="Device identifier (e.g., Roche_CobasLiat)")
+@click.option("--device-name", required=True, help="Human-readable device name")
+@click.option("--index-dir", required=True, type=click.Path(exists=True), help="Path to FAISS/BM25 index directory")
+@click.option("--output", type=click.Path(), help="Output path for blueprint.json (default: index_dir/blueprint.json)")
+@click.option("--provider", type=click.Choice(["ollama", "anthropic", "openai"]), help="Override LLM provider from config")
+@click.option("--model", help="Override LLM model from config")
+def extract_blueprint(device_id: str, device_name: str, index_dir: str, output: Optional[str], provider: Optional[str], model: Optional[str]):
+    """
+    Extract POCT1-A device blueprint using LLM.
+    
+    Uses existing FAISS/BM25 index to retrieve context,
+    then calls LLM (local or external) to extract message definitions.
+    Results are cached in SQLite for deterministic re-runs.
+    
+    Example:
+        spec-parser device extract-blueprint \\
+            --device-id Roche_CobasLiat \\
+            --device-name "Roche cobas Liat Analyzer" \\
+            --index-dir data/spec_output/20260118_180201_rochecobasliat/index
+    """
+    from ...llm.llm_interface import LLMInterface, create_llm_provider
+    from ...llm.nodes import BlueprintFlow
+    
+    logger.info("=" * 70)
+    logger.info(f"Extracting blueprint for: {device_name}")
+    logger.info("=" * 70)
+    
+    # Create LLM provider with optional overrides
+    try:
+        if provider or model:
+            llm_provider = create_llm_provider(provider_name=provider, model=model)
+            llm = LLMInterface(provider=llm_provider)
+        else:
+            llm = LLMInterface()
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM provider: {e}")
+        logger.info("For Ollama: Ensure 'ollama serve' is running and model is pulled")
+        logger.info("For external APIs: Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable")
+        sys.exit(1)
+    
+    # Run blueprint extraction
+    flow = BlueprintFlow(
+        device_id=device_id,
+        device_name=device_name,
+        index_dir=Path(index_dir),
+        llm=llm
+    )
+    
+    try:
+        blueprint = flow.run()
+    except Exception as e:
+        logger.error(f"Blueprint extraction failed: {e}")
+        logger.exception(e)
+        sys.exit(1)
+    
+    # Save blueprint
+    if output:
+        output_path = Path(output)
+    else:
+        output_path = Path(index_dir).parent / "blueprint.json"
+    
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, 'w') as f:
+        json.dump(blueprint, f, indent=2)
+    
+    logger.success(f"Blueprint saved: {output_path}")
+    logger.info(f"Summary: {blueprint['summary']}")
+    logger.info(f"Cache stats: {blueprint.get('cache_stats', {})}")
+

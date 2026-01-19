@@ -50,6 +50,19 @@ class Settings(BaseSettings):
     rlm_max_span_length: int = 5000  # Max characters per span
     rlm_neighbors_count: int = 3  # Number of neighbor spans to retrieve
     
+    # LLM settings
+    llm_provider: str = "ollama"  # "ollama", "anthropic", or "openai"
+    llm_model: str = "qwen2.5-coder:7b"  # Model identifier
+    llm_base_url: str = "http://localhost:11434"  # Ollama base URL
+    llm_temperature: float = 0.0  # Deterministic generation
+    llm_max_tokens: int = 4000  # Maximum response tokens
+    llm_rate_limit: float = 1.0  # Requests per second for external APIs
+    llm_timeout: int = 120  # Request timeout in seconds
+    
+    # LLM cache settings
+    llm_cache_dir: Path = project_root / "config"
+    llm_global_cache: str = "llm_corrections.db"  # Global corrections
+    
     # Logging
     log_level: str = "INFO"
     log_file: Optional[Path] = None
