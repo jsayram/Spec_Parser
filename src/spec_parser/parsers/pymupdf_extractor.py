@@ -20,6 +20,7 @@ from spec_parser.schemas.page_bundle import (
 from spec_parser.schemas.citation import Citation
 from spec_parser.config import settings
 from spec_parser.exceptions import PDFExtractionError
+from spec_parser.parsers.text_table_extractor import TextBasedTableExtractor
 
 
 class PyMuPDFExtractor:
@@ -223,19 +224,50 @@ class PyMuPDFExtractor:
         return blocks
 
     def _extract_tables(self, page, page_num: int) -> List[TableBlock]:
-        """Extract tables with bboxes"""
+        """
+        Extract tables with bboxes.
+        
+        Uses PyMuPDF table detection first, then enhances empty tables
+        with text-based extraction as fallback.
+        """
         blocks = []
+        
+        # Try PyMuPDF table detection first
         tables = page.find_tables()
+        
+        # Get text dictionary for text-based extraction fallback
+        text_dict = page.get_text("dict")
+        text_extractor = TextBasedTableExtractor()
 
         for idx, table in enumerate(tables):
             bbox = tuple(table.bbox)
 
             # Convert table to markdown
+            markdown_table = None
             try:
                 markdown_table = table.to_markdown()
+                
+                # Check if table is empty (header-only)
+                if markdown_table:
+                    lines = [l.strip() for l in markdown_table.split('\n') if l.strip()]
+                    # If only 2 lines (header + separator), it's empty
+                    if len(lines) <= 2:
+                        logger.debug(f"Table {page_num}_{idx+1} is empty, trying text-based extraction")
+                        markdown_table = None
+                        
             except Exception as e:
                 logger.warning(f"Failed to convert table to markdown: {e}")
                 markdown_table = None
+            
+            # If PyMuPDF failed or returned empty table, try text-based extraction
+            if not markdown_table:
+                try:
+                    enhanced = text_extractor.enhance_empty_table(bbox, text_dict)
+                    if enhanced:
+                        markdown_table = enhanced
+                        logger.info(f"Enhanced empty table {page_num}_{idx+1} with text-based extraction")
+                except Exception as e:
+                    logger.warning(f"Text-based table extraction failed: {e}")
 
             blocks.append(
                 TableBlock(
@@ -246,8 +278,51 @@ class PyMuPDFExtractor:
                     markdown_table=markdown_table,
                 )
             )
+        
+        # Also try pure text-based extraction for tables PyMuPDF might have missed
+        try:
+            text_tables = text_extractor.extract_tables_from_text_dict(
+                text_dict, 
+                page.rect  # Use page.rect instead of page.bbox
+            )
+            
+            for idx, (bbox, markdown_table) in enumerate(text_tables):
+                # Check if this table overlaps with existing tables
+                overlaps = False
+                for existing_block in blocks:
+                    if self._bboxes_overlap(bbox, existing_block.bbox):
+                        overlaps = True
+                        break
+                
+                if not overlaps:
+                    table_ref = f"table_{page_num}_text_{idx+1}"
+                    blocks.append(
+                        TableBlock(
+                            type="table",
+                            bbox=bbox,
+                            citation="",
+                            table_ref=table_ref,
+                            markdown_table=markdown_table,
+                        )
+                    )
+                    logger.debug(f"Added text-based table {table_ref}")
+                    
+        except Exception as e:
+            logger.warning(f"Text-based table detection failed: {e}")
 
         return blocks
+    
+    def _bboxes_overlap(self, bbox1: Tuple[float, float, float, float], 
+                        bbox2: Tuple[float, float, float, float]) -> bool:
+        """Check if two bounding boxes overlap."""
+        x1_min, y1_min, x1_max, y1_max = bbox1
+        x2_min, y2_min, x2_max, y2_max = bbox2
+        
+        # Check for no overlap (easier to reason about)
+        no_overlap = (x1_max < x2_min or x2_max < x1_min or
+                     y1_max < y2_min or y2_max < y1_min)
+        
+        return not no_overlap
 
     def _extract_graphics(self, page, page_num: int) -> List[GraphicsBlock]:
         """Extract graphics cluster bboxes (vector graphics)"""
