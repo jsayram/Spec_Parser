@@ -166,7 +166,13 @@ class FieldTableParser:
         for row_line in lines[2:]:
             cells = [c.strip() for c in row_line.split('|') if c.strip()]
             
-            if len(cells) <= max(filter(None, [field_col, desc_col, example_col, opt_col])):
+            # Skip empty rows
+            if not cells:
+                continue
+            
+            # Check if we have enough columns
+            valid_cols = [c for c in [field_col, desc_col, example_col, opt_col] if c is not None]
+            if valid_cols and len(cells) <= max(valid_cols):
                 continue
             
             field_name = cells[field_col] if field_col < len(cells) else ""
