@@ -8,7 +8,7 @@ from loguru import logger
 
 from spec_parser.llm.llm_interface import LLMInterface
 from spec_parser.llm.prompts import PromptTemplates
-from spec_parser.search.hybrid_search import HybridSearch
+from spec_parser.search.hybrid_search import HybridSearcher
 
 
 class ExtractionNode:
@@ -79,7 +79,7 @@ class ExtractionNode:
 class MessageDiscoveryNode(ExtractionNode):
     """Discover all POCT1-A messages in specification."""
 
-    def __init__(self, llm: LLMInterface, searcher: HybridSearch):
+    def __init__(self, llm: LLMInterface, searcher: HybridSearcher):
         """Initialize message discovery node.
         
         Args:
@@ -154,7 +154,7 @@ class MessageDiscoveryNode(ExtractionNode):
 class MessageFieldExtractionNode(ExtractionNode):
     """Extract field definitions for a specific message (BatchNode pattern)."""
 
-    def __init__(self, llm: LLMInterface, searcher: HybridSearch, message_type: str):
+    def __init__(self, llm: LLMInterface, searcher: HybridSearcher, message_type: str):
         """Initialize field extraction node for one message.
         
         Args:
@@ -246,7 +246,7 @@ class BlueprintFlow:
         self.llm = llm or LLMInterface()
         
         # Initialize search
-        self.searcher = HybridSearch(index_dir=index_dir)
+        self.searcher = HybridSearcher(index_dir=index_dir)
         
         logger.info(f"Initialized BlueprintFlow for {device_name}")
 
