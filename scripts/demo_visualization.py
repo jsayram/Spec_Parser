@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 """
-Demo script to visualize PDF extraction on first 30 pages.
-Shows colored bounding boxes around extracted blocks.
+Demo script to visualize PDF extraction with bounding boxes.
+Shows colored overlays for text, tables, images, and graphics blocks.
+
+Usage:
+    python scripts/demo_visualization.py <pdf_path> [--pages N] [--output DIR]
+    
+Examples:
+    python scripts/demo_visualization.py data/specs/my_spec.pdf
+    python scripts/demo_visualization.py data/specs/my_spec.pdf --pages 10
+    python scripts/demo_visualization.py data/specs/my_spec.pdf --output data/debug_output/my_viz
 """
 
 from pathlib import Path
 import sys
+import argparse
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -17,23 +26,68 @@ from loguru import logger
 
 
 def main():
-    # Paths
-    pdf_path = Path("/Users/jramirez/Git/Spec_Parser/data/specs/03_Quidel_Sofia_LIS_Specification_POCT1a.pdf")
-    output_dir = Path("/Users/jramirez/Git/Spec_Parser/data/output/extraction_debug")
+    parser = argparse.ArgumentParser(
+        description="Visualize PDF extraction with colored bounding boxes"
+    )
+    parser.add_argument(
+        "pdf_path",
+        type=Path,
+        help="Path to PDF file to visualize"
+    )
+    parser.add_argument(
+        "--pages", "-p",
+        type=int,
+        default=30,
+        help="Max pages to extract (default: 30, use 0 for all)"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        type=Path,
+        default=None,
+        help="Output directory (default: data/debug_output/extraction_viz/<pdf_name>)"
+    )
+    parser.add_argument(
+        "--outline",
+        action="store_true",
+        help="Use outline-only boxes (no fill) for tighter look"
+    )
+    parser.add_argument(
+        "--no-labels",
+        action="store_true",
+        help="Hide citation labels for cleaner view"
+    )
+    
+    args = parser.parse_args()
+    
+    # Validate PDF exists
+    pdf_path = args.pdf_path.resolve()
+    if not pdf_path.exists():
+        logger.error(f"PDF not found: {pdf_path}")
+        sys.exit(1)
+    
+    # Set output directory
+    if args.output:
+        output_dir = args.output.resolve()
+    else:
+        project_root = Path(__file__).parent.parent
+        output_dir = project_root / "data" / "debug_output" / "extraction_viz" / pdf_path.stem
+    
     output_dir.mkdir(parents=True, exist_ok=True)
     
     logger.info(f"PDF: {pdf_path.name}")
     logger.info(f"Output: {output_dir}")
-    logger.info("Extracting first 30 pages with visualization...")
+    
+    # Determine pages to extract
+    max_pages = args.pages if args.pages > 0 else None
     
     # Extract pages
     with PyMuPDFExtractor(pdf_path) as extractor:
         # Get total page count
         total_pages = len(extractor.doc)
-        pages_to_extract = min(30, total_pages)
+        pages_to_extract = min(max_pages, total_pages) if max_pages else total_pages
         logger.info(f"Total pages: {total_pages}, extracting: {pages_to_extract}")
         
-        # Extract first 30 pages in parallel
+        # Extract pages in parallel
         bundles = extractor.extract_all_pages(
             max_pages=pages_to_extract,
             max_workers=4,
@@ -67,7 +121,9 @@ def main():
         renderer = VisualizationRenderer(
             output_dir=viz_dir,
             dpi=150,
-            show_labels=True,
+            show_labels=not args.no_labels,
+            opacity=0.0 if args.outline else 0.3,  # No fill for outline mode
+            line_width=1.0 if args.outline else 2.0,  # Thinner lines for outline
         )
         
         rendered_pages = renderer.render_all_pages(
