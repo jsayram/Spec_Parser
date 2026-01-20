@@ -6,6 +6,19 @@ This is a **V1 greenfield project** for parsing and normalizing POCT1 (Point-of-
 
 ## Critical Rules
 
+### 🚨 0. GENERIC POCT1-A SYSTEM - MOST IMPORTANT 🚨
+- **THIS SYSTEM MUST WORK FOR ANY POCT1-A DEVICE FROM ANY VENDOR**
+- **NEVER hardcode vendor-specific message names** (e.g., don't assume "HELLO", "OBS", "RGT" exist)
+- **NEVER hardcode vendor names** (e.g., don't search for "Roche", "Abbott", "Quidel" specifically)
+- **ALWAYS discover what messages exist** from the specification document itself
+- **ALWAYS use generic search queries** that work across all POCT1-A specs
+- **ALWAYS extract vendor extensions** using namespaces (e.g., "VENDOR.DEVICE.MESSAGE")
+- **ALWAYS capture bidirectional patterns** (request/response, query/acknowledgment) generically
+- The system should work equally well for Roche cobas Liat, Abbott i-STAT, Quidel Sofia, Siemens, or ANY POCT1-A device
+- Search queries MUST be vendor-agnostic: "POCT1-A message type", "table of contents", "bidirectional communication", etc.
+- LLM prompts MUST discover messages instead of looking for specific ones
+- Field extraction MUST discover field names as they appear in spec, not assume standard patterns
+
 ### 1. V1 Greenfield Approach
 - **This is ALWAYS Version 1** - treat all code as brand new
 - **NO backwards compatibility code** - never write compatibility layers or migration code
@@ -89,12 +102,21 @@ This is a **V1 greenfield project** for parsing and normalizing POCT1 (Point-of-
 - Machine-readable, deterministic parsing
 - Easy to diff and version control
 
-### POCT1 Entity Extraction
-- Extract message definitions (e.g., `OBS.R01`, `OPL.R01`, `QCN.R01`)
-- Extract field tables with name, type, optionality, cardinality
-- Extract XML snippets and schemas
-- Extract vendor extension namespaces
+### POCT1-A Entity Extraction (Generic, Vendor-Agnostic)
+- **DISCOVER message definitions** from document (e.g., `OBS.R01`, `ACK.R01`, `CUSTOM.MESSAGE`)
+- **DO NOT assume standard messages exist** - extract what THIS device implements
+- **Extract vendor extensions** with namespaces (e.g., `ROCHE.LIAT.CFG`, `ABBOTT.ISTAT.STATUS`)
+- **Capture bidirectional patterns** - which messages trigger which responses
+- **Extract field definitions** as they appear (don't assume `_cd`, `_val` naming)
+- Extract XML snippets, schemas, and data structures as documented
 - Attach provenance to every extracted entity: `{page, bbox, source, confidence}`
+- Use **generic search queries** that work for ANY vendor's POCT1-A spec:
+  - "POCT1-A message type structure"
+  - "table of contents messages"
+  - "bidirectional communication host device"
+  - "vendor specific extension custom message"
+  - "message trigger event response acknowledgment"
+- Prompts should instruct LLM to **discover, not assume** what exists
 
 ### Search and Indexing
 - Use FAISS for semantic vector search
@@ -230,6 +252,9 @@ def has_selectable_text(page: Page, bbox: Tuple[float, float, float, float]) -> 
 ❌ Migration scripts or upgrade paths
 ❌ Files over 300 lines
 ❌ Hardcoded file paths
+❌ **Vendor-specific hardcoded message names** (OBS, ACK, HELLO, etc.)
+❌ **Vendor name hardcoding** (Roche, Abbott, Quidel in search queries)
+❌ **Assuming standard POCT1-A messages exist** - must discover from spec
 ❌ Missing citations or provenance
 ❌ Discarding positional metadata
 ❌ Platform-specific code
@@ -242,6 +267,10 @@ def has_selectable_text(page: Page, bbox: Tuple[float, float, float, float]) -> 
 
 ## What to Always Do
 
+✅ **Use generic, vendor-agnostic search queries for ANY POCT1-A spec**
+✅ **Discover messages from document, never assume which ones exist**
+✅ **Extract vendor extensions with namespaces (VENDOR.DEVICE.MESSAGE)**
+✅ **Capture bidirectional patterns generically (request/response)**
 ✅ Treat as V1 greenfield project
 ✅ Keep files under 300 lines
 ✅ Include citations on every extracted element
