@@ -143,17 +143,19 @@ class MessageDiscoveryNode(ExtractionNode):
         device_name = context["device_name"]
         
         # Search for message discovery with POCT1-A specific patterns
+        # Generic search queries for ANY POCT1-A specification
+        # Discover ALL message types, vendor extensions, and bidirectional patterns
         queries = [
-            "POCT1-A message type supported",
-            "HELLO OBS RGT DST CONFG message",
-            "device LIS bidirectional communication",
-            "message structure protocol",
-            "observation result reagent status",
-            "acknowledgment query response",
-            "device discovery initialization",
-            "supported message list table",
-            "message flow diagram",
-            "vendor extension Z message"
+            "POCT1-A message type structure supported communication",
+            "table of contents messages message structure",
+            "bidirectional communication host analyzer device interface",
+            "message definition field structure data type",
+            "vendor specific extension custom message namespace",
+            "message flow diagram sequence bidirectional request response",
+            "supported messages implemented protocol specification",
+            "message trigger event query response acknowledgment",
+            "communication pattern host device analyzer bidirectional",
+            "message structure component segment field cardinality optionality"
         ]
         
         chunks = []

@@ -23,55 +23,58 @@ class PromptTemplates:
 
 Your task: Extract ALL POCT1-A message types mentioned in this specification.
 
-POCT1-A core message types to look for:
-- HELLO / HELLO.R01: Device discovery and initialization (bidirectional)
-- OBS / OBS.R01: Observation results from device to LIS
-- RGT / RGT.R01: Reagent information and lot tracking
-- DST / DST.R01: Device status and error reporting
-- CONFG / CONFG.R01: Configuration and settings
-- ACK: Acknowledgment messages
-- QCN: Quality control messages
-- Vendor extensions: Messages starting with 'Z' (e.g., ZMKY, ZBAN, ZORD)
+DISCOVER ALL message types including:
+- Standard POCT1-A messages (format: XXX.R01, XXX.R02, etc.) - DO NOT assume which ones exist
+- Vendor-specific extensions (format: VENDOR.DEVICE.MESSAGE or Z-prefixed messages)
+- Custom messages (any device-specific communication patterns)
+- Bidirectional patterns (request/response, query/acknowledgment)
 
-Common POCT1-A patterns to look for:
-- "supported messages", "message type", "message structure"
-- Tables listing POCT1-A message names (HELLO, OBS, RGT, DST, CONFG)
-- Message flow diagrams showing Device→LIS or LIS→Device
-- Protocol handshake descriptions
-- Query/Response/Acknowledgment patterns
+Search the context for:
+- Table of contents listing message names
+- "Supported messages" or "Implemented messages" sections
+- Message structure definitions with names
+- Communication flow diagrams showing message exchanges
+- Vendor extension or custom message namespaces
+- Bidirectional communication patterns (which messages trigger which responses)
 
 Context from specification:
 {context}
 
 Return a JSON array with ALL message types found. For each:
-- message_type: The POCT1-A message identifier (e.g., "HELLO.R01", "OBS", "RGT")
-- direction: "device_to_lis", "lis_to_device", or "bidirectional"
+- message_type: The message identifier (e.g., "OBS.R01", "ROCHE.LIAT.CFG", "DEVICE_STATUS")
+- direction: "device_to_host", "host_to_device", or "bidirectional"
 - description: Brief description from spec
+- message_category: "standard" (POCT1-A standard), "vendor_extension" (vendor namespace), or "custom"
+- namespace: Vendor namespace if applicable (e.g., "ROCHE.LIAT"), null otherwise
+- triggers: Array of message names this message can trigger as response (e.g., ["ACK.R01"])
 - citations: Array of page numbers where found (e.g., ["p12", "p45"])
 
 Example output:
 [
   {{
-    "message_type": "HELLO.R01",
-    "direction": "bidirectional",
-    "description": "Device discovery and initialization",
-    "citations": ["p12", "p45"]
-  }},
-  {{
-    "message_type": "OBS",
-    "direction": "device_to_lis",
-    "description": "Observation result message",
+    "message_type": "OBS.R01",
+    "direction": "device_to_host",
+    "description": "Patient-related observation result",
+    "message_category": "standard",
+    "namespace": null,
+    "triggers": ["ACK.R01"],
     "citations": ["p20"]
   }},
   {{
-    "message_type": "RGT",
-    "direction": "device_to_lis",
-    "description": "Reagent lot information",
-    "citations": ["p25"]
+    "message_type": "VENDOR.DEVICE.CFG",
+    "direction": "host_to_device",
+    "description": "Device-specific configuration",
+    "message_category": "vendor_extension",
+    "namespace": "VENDOR.DEVICE",
+    "triggers": [],
+    "citations": ["p125"]
   }}
 ]
 
-IMPORTANT: Extract ONLY POCT1-A message types. Do NOT include HL7 segment names (MSH, PID, OBR, OBX)."""
+IMPORTANT: 
+- DO NOT list only common POCT1-A messages - discover what THIS device actually implements
+- Include ALL messages: standard, vendor extensions, custom
+- Extract from context, do not assume"""
 
     @staticmethod
     def message_field_extraction(
@@ -96,57 +99,74 @@ IMPORTANT: Extract ONLY POCT1-A message types. Do NOT include HL7 segment names 
 Context from specification:
 {context}
 
-Extract ALL field definitions for this message. Look for POCT1-A field patterns:
-- Field names with extensions: _cd, _dttm, _dt, _tm, _id, _nm, _val, _unit
-- Analyte identifiers and types
-- Enum values and allowed codes
-- Field segments and hierarchies
+Extract ALL field definitions for this message. Discover fields from the context - DO NOT assume standard fields exist.
+
+Look for ANY field patterns in this specification:
+- Field names with any extensions or formats
+- Data element names and identifiers
+- Component names in message structures
+- Segment field definitions
+- Vendor-specific field additions
+- Enum values and coded vocabularies
+- Field hierarchies and repeating structures
 
 For each field include:
-- field_name: Field identifier (e.g., "analyte_cd", "result_val", "collection_dttm")
+- field_name: Field identifier exactly as specified in document
 - field_description: What this field contains
-- data_type: Data type (e.g., "string", "number", "datetime", "enum")
-- optionality: "required", "optional", or "conditional"
+- data_type: Data type (string, number, datetime, boolean, enum, object, array, etc.)
+- optionality: "required", "optional", "conditional", or "depends" (with condition)
+- cardinality: "1", "0..1", "1..*", "0..*" or specific range
 - max_length: Maximum field length (if specified)
-- allowed_values: Array of allowed values or codes (if enumerated)
-- usage_notes: Any implementation notes or constraints
+- allowed_values: Array of allowed values, codes, or enumerations (if specified)
+- default_value: Default value (if specified)
+- usage_notes: Any implementation notes, constraints, or vendor-specific details
 - citations: Page numbers or sections where field is defined
 
 Return JSON array. Example:
 [
   {{
-    "field_name": "analyte_cd",
-    "field_description": "Analyte code identifier",
+    "field_name": "observation_identifier",
+    "field_description": "Unique identifier for this observation type",
     "data_type": "string",
     "optionality": "required",
-    "max_length": 20,
-    "allowed_values": ["GLU", "HbA1c", "CHOL"],
-    "usage_notes": "Device-specific analyte codes",
+    "cardinality": "1",
+    "max_length": 50,
+    "allowed_values": [],
+    "default_value": null,
+    "usage_notes": "Device assigns based on test type",
     "citations": ["p15"]
   }},
   {{
-    "field_name": "result_val",
-    "field_description": "Numeric result value",
-    "data_type": "number",
+    "field_name": "result_status",
+    "field_description": "Status of result processing",
+    "data_type": "enum",
     "optionality": "required",
-    "max_length": null,
-    "allowed_values": [],
-    "usage_notes": "Floating point, precision depends on analyte",
+    "cardinality": "1",
+    "max_length": 1,
+    "allowed_values": ["F", "C", "P", "X"],
+    "default_value": "F",
+    "usage_notes": "F=Final, C=Corrected, P=Preliminary, X=Cancelled",
     "citations": ["p23"]
   }},
   {{
-    "field_name": "collection_dttm",
-    "field_description": "Sample collection date and time",
-    "data_type": "datetime",
+    "field_name": "vendor_extension",
+    "field_description": "Vendor-specific data block",
+    "data_type": "object",
     "optionality": "optional",
+    "cardinality": "0..1",
     "max_length": null,
     "allowed_values": [],
-    "usage_notes": "ISO 8601 format",
-    "citations": ["p30"]
+    "default_value": null,
+    "usage_notes": "Contains device-specific configuration or metadata",
+    "citations": ["p125"]
   }}
 ]
 
-CRITICAL: Extract fields ONLY from the provided context. Include ALL citations."""
+CRITICAL: 
+- Extract fields ONLY from the provided context
+- Include vendor-specific fields and extensions
+- Do not assume standard POCT1-A field names - discover what THIS message uses
+- Include ALL citations"""
 
     @staticmethod
     def sample_message_extraction(
