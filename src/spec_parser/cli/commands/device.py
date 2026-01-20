@@ -112,7 +112,8 @@ def onboard_device(config: Optional[str], vendor: Optional[str], model: Optional
     version_dir.mkdir(parents=True, exist_ok=True)
     
     # Create images directory within version_dir and update settings
-    images_dir = version_dir / "images"
+    # Must use absolute path for PyMuPDF4LLM image_path parameter
+    images_dir = (version_dir / "images").resolve()
     images_dir.mkdir(parents=True, exist_ok=True)
     settings.image_dir = images_dir
     
@@ -413,7 +414,8 @@ def update_device_spec(config: Optional[str], device_type: Optional[str],
     version_dir.mkdir(parents=True, exist_ok=True)
     
     # Create images directory within version_dir and update settings
-    images_dir = version_dir / "images"
+    # Must use absolute path for PyMuPDF4LLM image_path parameter
+    images_dir = (version_dir / "images").resolve()
     images_dir.mkdir(parents=True, exist_ok=True)
     settings.image_dir = images_dir
     
