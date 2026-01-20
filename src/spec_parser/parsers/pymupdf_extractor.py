@@ -33,8 +33,15 @@ class PyMuPDFExtractor:
     Uses page-chunks mode for multimodal extraction with full provenance.
     """
 
-    def __init__(self, pdf_path: Path):
-        """Initialize extractor with PDF path"""
+    def __init__(self, pdf_path: Path, preload_to_ram: bool = True):
+        """Initialize extractor with PDF path.
+        
+        Args:
+            pdf_path: Path to the PDF file
+            preload_to_ram: If True, load entire PDF into RAM before processing.
+                           Faster for parallel extraction but uses more memory.
+                           A 236-page PDF typically uses ~20-50MB RAM.
+        """
         self.pdf_path = Path(pdf_path)
         if not self.pdf_path.exists():
             raise PDFExtractionError(f"PDF not found: {pdf_path}")
@@ -42,11 +49,21 @@ class PyMuPDFExtractor:
         self.doc = None
         self.pdf_name = self.pdf_path.stem
         self.layout_detector = LayoutDetector()
+        self.preload_to_ram = preload_to_ram
+        self._pdf_bytes = None  # Will hold PDF data if preloaded
 
     def __enter__(self):
         """Context manager entry"""
-        self.doc = pymupdf.open(str(self.pdf_path))
-        logger.info(f"Opened PDF: {self.pdf_name} ({len(self.doc)} pages)")
+        if self.preload_to_ram:
+            # Load entire PDF into RAM - eliminates disk I/O during extraction
+            with open(self.pdf_path, 'rb') as f:
+                self._pdf_bytes = f.read()
+            self.doc = pymupdf.open(stream=self._pdf_bytes, filetype="pdf")
+            size_mb = len(self._pdf_bytes) / (1024 * 1024)
+            logger.info(f"Preloaded PDF to RAM: {self.pdf_name} ({len(self.doc)} pages, {size_mb:.1f} MB)")
+        else:
+            self.doc = pymupdf.open(str(self.pdf_path))
+            logger.info(f"Opened PDF: {self.pdf_name} ({len(self.doc)} pages)")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
