@@ -160,13 +160,14 @@ class MessageSchemaBuilder:
         Generate human-readable description for message.
         
         Args:
-            message_id: Message identifier (e.g., "HEL.R01")
+            message_id: Message identifier (e.g., "HEL.R01", "VENDOR.DEVICE.MSG")
             
         Returns:
             Message description
         """
-        # Common POCT1-A message descriptions
-        descriptions = {
+        # Common POCT1-A message descriptions (fallback only, not authoritative)
+        # These are generic examples - actual descriptions should come from spec
+        common_descriptions = {
             "HEL.R01": "Hello Message - Device introduction",
             "ACK.R01": "Acknowledgement Message",
             "DST.R01": "Device Status Message",
@@ -180,7 +181,8 @@ class MessageSchemaBuilder:
             "QCN.R01": "Quality Control Message"
         }
         
-        return descriptions.get(message_id, f"{message_id} Message")
+        # Use common description if available, otherwise generate generic
+        return common_descriptions.get(message_id, f"{message_id} Message")
 
 
 def build_message_schemas_from_document(
