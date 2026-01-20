@@ -141,3 +141,4 @@ data/
 !data/README.md
 !data/specs/.gitkeep
 !data/spec_output/.gitkeep
+!data/output/.gitkeep

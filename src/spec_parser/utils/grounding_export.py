@@ -74,39 +74,39 @@ class GroundingExporter:
         
         # Export text blocks
         if self.include_text:
-            for block in bundle.text_blocks:
+            for block in bundle.get_blocks_by_type("text"):
                 block_counts["text"] += 1
                 file_path = self._export_block(
                     page, block.bbox, 
                     f"text_{block_counts['text']:03d}",
-                    page_dir, block.citation_id
+                    page_dir, block.citation
                 )
                 if file_path:
-                    exported[block.citation_id] = file_path
+                    exported[block.citation] = file_path
         
         # Export picture blocks
         if self.include_pictures:
-            for block in bundle.picture_blocks:
+            for block in bundle.get_blocks_by_type("picture"):
                 block_counts["picture"] += 1
                 file_path = self._export_block(
                     page, block.bbox,
                     f"picture_{block_counts['picture']:03d}",
-                    page_dir, block.citation_id
+                    page_dir, block.citation
                 )
                 if file_path:
-                    exported[block.citation_id] = file_path
+                    exported[block.citation] = file_path
         
         # Export table blocks
         if self.include_tables:
-            for block in bundle.table_blocks:
+            for block in bundle.get_blocks_by_type("table"):
                 block_counts["table"] += 1
                 file_path = self._export_block(
                     page, block.bbox,
                     f"table_{block_counts['table']:03d}",
-                    page_dir, block.citation_id
+                    page_dir, block.citation
                 )
                 if file_path:
-                    exported[block.citation_id] = file_path
+                    exported[block.citation] = file_path
         
         logger.debug(
             f"Exported {len(exported)} groundings for page {page_num}: "
@@ -185,7 +185,7 @@ class GroundingExporter:
         with pymupdf.open(pdf_path) as doc:
             for bundle in bundles:
                 page_exports = self.export_page_groundings(
-                    doc, bundle, bundle.page_number
+                    doc, bundle, bundle.page
                 )
                 all_exported.update(page_exports)
         

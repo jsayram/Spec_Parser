@@ -80,32 +80,32 @@ class VisualizationRenderer:
             shape = page.new_shape()
             
             # Draw text blocks
-            for block in bundle.text_blocks:
+            for block in bundle.get_blocks_by_type("text"):
                 self._draw_bbox(
                     shape, block.bbox, "text",
-                    label=f"text:{block.citation_id[:20]}" if self.show_labels else None
+                    label=f"text:{block.citation[:20]}" if self.show_labels else None
                 )
             
             # Draw picture blocks
-            for block in bundle.picture_blocks:
+            for block in bundle.get_blocks_by_type("picture"):
                 source_label = "ocr" if block.source == "ocr" else "picture"
                 self._draw_bbox(
                     shape, block.bbox, source_label,
-                    label=f"img:{block.citation_id[:20]}" if self.show_labels else None
+                    label=f"img:{block.citation[:20]}" if self.show_labels else None
                 )
             
             # Draw table blocks
-            for block in bundle.table_blocks:
+            for block in bundle.get_blocks_by_type("table"):
                 self._draw_bbox(
                     shape, block.bbox, "table",
-                    label=f"tbl:{block.citation_id[:20]}" if self.show_labels else None
+                    label=f"tbl:{block.citation[:20]}" if self.show_labels else None
                 )
             
             # Draw graphics blocks
-            for block in bundle.graphics_blocks:
+            for block in bundle.get_blocks_by_type("graphics"):
                 self._draw_bbox(
                     shape, block.bbox, "graphics",
-                    label=f"gfx:{block.citation_id[:20]}" if self.show_labels else None
+                    label=f"gfx:{block.citation[:20]}" if self.show_labels else None
                 )
             
             # Commit all drawings
@@ -122,10 +122,10 @@ class VisualizationRenderer:
             
             # Count blocks for logging
             block_counts = {
-                "text": len(bundle.text_blocks),
-                "picture": len(bundle.picture_blocks),
-                "table": len(bundle.table_blocks),
-                "graphics": len(bundle.graphics_blocks),
+                "text": len(bundle.get_blocks_by_type("text")),
+                "picture": len(bundle.get_blocks_by_type("picture")),
+                "table": len(bundle.get_blocks_by_type("table")),
+                "graphics": len(bundle.get_blocks_by_type("graphics")),
             }
             total_blocks = sum(block_counts.values())
             
@@ -198,7 +198,7 @@ class VisualizationRenderer:
         
         with pymupdf.open(pdf_path) as doc:
             for bundle in bundles:
-                output_path = self.render_page(doc, bundle, bundle.page_number)
+                output_path = self.render_page(doc, bundle, bundle.page)
                 if output_path:
                     rendered.append(output_path)
         
@@ -282,8 +282,8 @@ def create_comparison_view(
     renderer = VisualizationRenderer(output_dir=output_dir)
     
     # Find bundles for the specified page
-    bundle_before = next((b for b in bundles_before if b.page_number == page_num), None)
-    bundle_after = next((b for b in bundles_after if b.page_number == page_num), None)
+    bundle_before = next((b for b in bundles_before if b.page == page_num), None)
+    bundle_after = next((b for b in bundles_after if b.page == page_num), None)
     
     before_path = None
     after_path = None

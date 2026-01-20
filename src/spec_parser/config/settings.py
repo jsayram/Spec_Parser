@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     data_dir: Path = project_root / "data"
     specs_dir: Path = data_dir / "specs"
     spec_output_dir: Path = data_dir / "spec_output"
+    extraction_output_dir: Path = data_dir / "output"  # Debug/temp extraction outputs
     models_dir: Path = project_root / "models"
     
     # Output directories (set dynamically per parsing run)

@@ -78,14 +78,33 @@ class PyMuPDFExtractor:
         # Get page (0-indexed in PyMuPDF)
         page = self.doc[page_num - 1]
 
-        # Extract using pymupdf4llm
-        md_dict = pymupdf4llm.to_markdown(
-            self.doc,
-            pages=[page_num - 1],
-            page_chunks=True,
-            write_images=True,
-            image_path=str(settings.image_dir) if settings.image_dir else None,
-        )
+        # Extract using pymupdf4llm - some pages may fail table detection
+        # so we try with tables first, then without if it fails
+        md_dict = None
+        try:
+            md_dict = pymupdf4llm.to_markdown(
+                self.doc,
+                pages=[page_num - 1],
+                page_chunks=True,
+                write_images=True,
+                image_path=str(settings.image_dir) if settings.image_dir else None,
+            )
+        except Exception as e:
+            logger.debug(f"pymupdf4llm with tables failed on page {page_num}: {e}")
+            # Retry without tables (fallback for problematic pages)
+            try:
+                md_dict = pymupdf4llm.to_markdown(
+                    self.doc,
+                    pages=[page_num - 1],
+                    page_chunks=True,
+                    write_images=True,
+                    image_path=str(settings.image_dir) if settings.image_dir else None,
+                    table_strategy="none",  # Disable table extraction
+                )
+                logger.debug(f"Page {page_num}: extracted without table detection")
+            except Exception as e2:
+                logger.warning(f"pymupdf4llm fallback also failed on page {page_num}: {e2}")
+                # Continue with empty markdown - we'll still extract blocks manually
 
         # Initialize page bundle
         bundle = PageBundle(
@@ -185,7 +204,7 @@ class PyMuPDFExtractor:
             )
         
         # Sort bundles by page number (parallel processing may return out of order)
-        bundles.sort(key=lambda b: b.page_number)
+        bundles.sort(key=lambda b: b.page)
         
         if failed_pages:
             logger.warning(f"Failed to extract {len(failed_pages)} pages: {failed_pages}")
@@ -383,13 +402,29 @@ class PyMuPDFExtractor:
         blocks = []
         
         # Try PyMuPDF table detection first
-        tables = page.find_tables()
+        # Note: find_tables() can return None on some pages (image-only, scanned, etc.)
+        try:
+            tables = page.find_tables()
+        except Exception as e:
+            logger.debug(f"Table detection failed on page {page_num}: {e}")
+            tables = None
+        
+        # Early return if no tables found
+        if tables is None:
+            return blocks
         
         # Get text dictionary for text-based extraction fallback
         text_dict = page.get_text("dict")
         text_extractor = TextBasedTableExtractor()
 
-        for idx, table in enumerate(tables):
+        # Safely iterate over tables - TableFinder may fail during iteration
+        try:
+            table_list = list(tables)  # Convert to list to catch iteration errors early
+        except Exception as e:
+            logger.debug(f"Failed to iterate over tables on page {page_num}: {e}")
+            table_list = []
+
+        for idx, table in enumerate(table_list):
             bbox = tuple(table.bbox)
 
             # Convert table to markdown
