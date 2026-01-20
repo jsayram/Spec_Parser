@@ -27,3 +27,4 @@ loguru>=0.7.0
 # For Anthropic: pip install anthropic
 # For OpenAI: pip install openai
 requests>=2.31.0  # Required for Ollama provider
+tenacity>=8.0.0

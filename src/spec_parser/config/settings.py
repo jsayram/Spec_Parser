@@ -1,5 +1,5 @@
 """
-Configuration module using pydantic-settings.
+Application settings using pydantic-settings.
 
 All configuration loaded from environment variables with sensible defaults.
 """
@@ -17,14 +17,13 @@ class Settings(BaseSettings):
     """
     
     # Project paths
-    project_root: Path = Path(__file__).parent.parent.parent
+    project_root: Path = Path(__file__).parent.parent.parent.parent
     data_dir: Path = project_root / "data"
     specs_dir: Path = data_dir / "specs"
     spec_output_dir: Path = data_dir / "spec_output"
-    models_dir: Path = project_root / "models"  # For LLM/embedding model binaries
+    models_dir: Path = project_root / "models"
     
     # Output directories (set dynamically per parsing run)
-    # Use create_output_session() to generate timestamped directory
     output_dir: Optional[Path] = None
     image_dir: Optional[Path] = None
     markdown_dir: Optional[Path] = None
@@ -43,32 +42,32 @@ class Settings(BaseSettings):
     
     # Search settings
     search_top_k: int = 5
-    hybrid_search_alpha: float = 0.5  # Weight for semantic vs keyword
+    hybrid_search_alpha: float = 0.5
     
     # RLM settings
-    rlm_context_window: int = 2000  # Characters before/after target
-    rlm_max_span_length: int = 5000  # Max characters per span
-    rlm_neighbors_count: int = 3  # Number of neighbor spans to retrieve
+    rlm_context_window: int = 2000
+    rlm_max_span_length: int = 5000
+    rlm_neighbors_count: int = 3
     
     # LLM settings
-    llm_provider: str = "ollama"  # "huggingface", "ollama", "anthropic", or "openai"
-    llm_model: str = "qwen2.5-coder:7b"  # Model identifier
-    llm_base_url: str = "http://localhost:11434"  # Ollama base URL (ignored for huggingface)
-    llm_temperature: float = 0.0  # Deterministic generation
-    llm_max_tokens: int = 4000  # Maximum response tokens
-    llm_rate_limit: float = 1.0  # Requests per second for external APIs
-    llm_timeout: int = 120  # Request timeout in seconds
+    llm_provider: str = "ollama"
+    llm_model: str = "qwen2.5-coder:7b"
+    llm_base_url: str = "http://localhost:11434"
+    llm_temperature: float = 0.0
+    llm_max_tokens: int = 4000
+    llm_rate_limit: float = 1.0
+    llm_timeout: int = 120
     
     # LLM cache settings
     llm_cache_dir: Path = project_root / "config"
-    llm_global_cache: str = "llm_corrections.db"  # Global corrections
+    llm_global_cache: str = "llm_corrections.db"
     
     # Logging
     log_level: str = "INFO"
     log_file: Optional[Path] = None
     
     # Performance
-    max_workers: int = 4  # Parallel processing workers
+    max_workers: int = 4
     
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -78,13 +77,11 @@ class Settings(BaseSettings):
     )
     
     def ensure_directories(self):
-        """Create all required directories"""
-        # Ensure base directories exist
+        """Create all required directories."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.specs_dir.mkdir(parents=True, exist_ok=True)
         self.spec_output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create output session directories if set
         if self.output_dir:
             for directory in [
                 self.output_dir,
@@ -111,16 +108,12 @@ class Settings(BaseSettings):
         from datetime import datetime
         import re
         
-        # Generate timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Extract identifier from PDF name
         pdf_stem = pdf_path.stem
-        # Remove version numbers, dates, and common suffixes
         identifier = re.sub(r'[_\-](v\d+|version\d+|\d{4,8})', '', pdf_stem, flags=re.IGNORECASE)
-        identifier = re.sub(r'[^a-zA-Z0-9]', '', identifier)[:20]  # Max 20 chars, alphanumeric only
+        identifier = re.sub(r'[^a-zA-Z0-9]', '', identifier)[:20]
         
-        # Create session directory
         session_name = f"{timestamp}_{identifier}"
         self.output_dir = self.spec_output_dir / session_name
         self.image_dir = self.output_dir / "images"
@@ -128,7 +121,6 @@ class Settings(BaseSettings):
         self.json_dir = self.output_dir / "json"
         self.index_dir = self.output_dir / "index"
         
-        # Create directories
         self.ensure_directories()
         
         return self.output_dir
