@@ -11,6 +11,14 @@ from spec_parser.llm.prompts import PromptTemplates
 from spec_parser.search.hybrid_search import HybridSearcher
 from spec_parser.search.faiss_indexer import FAISSIndexer
 from spec_parser.search.bm25_searcher import BM25Searcher
+from spec_parser.schemas.confidence import (
+    ExtractionResult,
+    ConfidenceScore,
+    SearchConfidence,
+    LLMConfidence,
+    ValidationConfidence,
+)
+from spec_parser.llm.validation_agent import ValidationAgent
 
 
 def strip_markdown_json(text: str) -> str:
@@ -138,7 +146,7 @@ class MessageDiscoveryNode(ExtractionNode):
             context: Must contain 'device_name'
             
         Returns:
-            Context with 'discovery_chunks'
+            Context with 'discovery_chunks' and 'discovery_search_results'
         """
         device_name = context["device_name"]
         
@@ -159,9 +167,11 @@ class MessageDiscoveryNode(ExtractionNode):
         ]
         
         chunks = []
+        all_results = []
         seen_texts = set()
         for query in queries:
             results = self.searcher.search(query, k=5)
+            all_results.extend(results)
             for r in results:
                 text = r["text"]
                 # Deduplicate by content
@@ -170,6 +180,7 @@ class MessageDiscoveryNode(ExtractionNode):
                     seen_texts.add(text)
         
         context["discovery_chunks"] = chunks[:20]  # Increase to 20 best chunks
+        context["discovery_search_results"] = all_results  # Store for confidence calculation
         logger.info(f"[{self.name}] Retrieved {len(context['discovery_chunks'])} context chunks")
         
         return context
@@ -178,10 +189,10 @@ class MessageDiscoveryNode(ExtractionNode):
         """Call LLM to extract message types.
         
         Args:
-            context: Must contain 'device_name', 'discovery_chunks'
+            context: Must contain 'device_name', 'discovery_chunks', 'discovery_search_results'
             
         Returns:
-            Context with 'discovered_messages'
+            Context with 'discovered_messages' as ExtractionResult
         """
         prompt = self.prompts.message_discovery(
             context_chunks=context["discovery_chunks"],
@@ -199,12 +210,67 @@ class MessageDiscoveryNode(ExtractionNode):
         try:
             cleaned_response = strip_markdown_json(response)
             messages = json.loads(cleaned_response)
-            context["discovered_messages"] = messages
-            logger.info(f"[{self.name}] Discovered {len(messages)} messages")
+            
+            # Calculate confidence scores
+            search_results = context.get("discovery_search_results", [])
+            
+            # Search confidence: average score + consistency
+            search_conf = SearchConfidence.calculate(search_results)
+            
+            # LLM confidence: response quality + completeness
+            required_fields = ["message_type", "direction", "description"]
+            llm_conf = LLMConfidence.calculate_from_response(
+                response=messages,
+                required_fields=required_fields,
+                raw_response=response
+            )
+            
+            # Overall confidence: weighted combination
+            overall_score = 0.4 * search_conf.score + 0.6 * llm_conf.score
+            
+            confidence = ConfidenceScore(
+                overall=overall_score,
+                breakdown={
+                    "search": search_conf.score,
+                    "llm": llm_conf.score,
+                },
+                evidence=[
+                    *search_conf.evidence,
+                    *llm_conf.evidence,
+                ]
+            )
+            
+            # Create ExtractionResult
+            extraction_result = ExtractionResult(
+                data=messages,
+                confidence=confidence,
+                sources=[r.get("citation", "unknown") for r in search_results[:5]],
+                metadata={
+                    "num_chunks": len(context["discovery_chunks"]),
+                    "num_messages": len(messages),
+                }
+            )
+            
+            context["discovered_messages"] = extraction_result
+            logger.info(
+                f"[{self.name}] Discovered {len(messages)} messages "
+                f"(confidence: {overall_score:.2f})"
+            )
         except json.JSONDecodeError as e:
             logger.error(f"[{self.name}] Failed to parse LLM response: {e}")
             logger.debug(f"[{self.name}] Raw response: {response[:200]}...")
-            context["discovered_messages"] = []
+            
+            # Return empty result with low confidence
+            context["discovered_messages"] = ExtractionResult(
+                data=[],
+                confidence=ConfidenceScore(
+                    overall=0.0,
+                    breakdown={"parse_error": 0.0},
+                    evidence=["Failed to parse JSON response"]
+                ),
+                sources=[],
+                metadata={"error": str(e)}
+            )
         
         return context
 
@@ -231,13 +297,14 @@ class MessageFieldExtractionNode(ExtractionNode):
             context: Must contain 'device_name'
             
         Returns:
-            Context with 'field_chunks'
+            Context with 'field_chunks' and 'field_search_results'
         """
         # Search for message-specific content
         query = f"{self.message_type} field definitions structure"
         results = self.searcher.search(query, k=5)
         
         context["field_chunks"] = [r["text"] for r in results]
+        context["field_search_results"] = results
         logger.info(
             f"[{self.name}] Retrieved {len(context['field_chunks'])} chunks "
             f"for {self.message_type}"
@@ -249,10 +316,10 @@ class MessageFieldExtractionNode(ExtractionNode):
         """Extract field definitions for this message.
         
         Args:
-            context: Must contain 'device_name', 'field_chunks'
+            context: Must contain 'device_name', 'field_chunks', 'field_search_results'
             
         Returns:
-            Context with 'fields' list
+            Context with 'fields' as ExtractionResult
         """
         prompt = self.prompts.message_field_extraction(
             message_type=self.message_type,
@@ -271,12 +338,87 @@ class MessageFieldExtractionNode(ExtractionNode):
         try:
             cleaned_response = strip_markdown_json(response)
             fields = json.loads(cleaned_response)
-            context["fields"] = fields
-            logger.info(f"[{self.name}] Extracted {len(fields)} fields")
+            
+            # Calculate confidence scores
+            search_results = context.get("field_search_results", [])
+            
+            # Search confidence
+            search_conf = SearchConfidence.calculate(search_results)
+            
+            # LLM confidence
+            required_fields = ["field_name", "data_type"]
+            llm_conf = LLMConfidence.calculate_from_response(
+                response=fields,
+                required_fields=required_fields,
+                raw_response=response
+            )
+            
+            # Field-level confidence: Check individual field completeness
+            field_confidence = {}
+            for field in fields:
+                completeness = sum(
+                    1 for key in ["field_name", "data_type", "cardinality", "description"]
+                    if field.get(key)
+                ) / 4.0
+                field_confidence[field.get("field_name", "unknown")] = completeness
+            
+            avg_field_confidence = (
+                sum(field_confidence.values()) / len(field_confidence)
+                if field_confidence else 0.0
+            )
+            
+            # Overall confidence
+            overall_score = (
+                0.3 * search_conf.score +
+                0.5 * llm_conf.score +
+                0.2 * avg_field_confidence
+            )
+            
+            confidence = ConfidenceScore(
+                overall=overall_score,
+                breakdown={
+                    "search": search_conf.score,
+                    "llm": llm_conf.score,
+                    "field_completeness": avg_field_confidence,
+                },
+                evidence=[
+                    *search_conf.evidence,
+                    *llm_conf.evidence,
+                    f"Average field completeness: {avg_field_confidence:.2f}"
+                ]
+            )
+            
+            # Create ExtractionResult
+            extraction_result = ExtractionResult(
+                data=fields,
+                confidence=confidence,
+                sources=[r.get("citation", "unknown") for r in search_results],
+                metadata={
+                    "message_type": self.message_type,
+                    "num_fields": len(fields),
+                    "field_confidence": field_confidence,
+                }
+            )
+            
+            context["fields"] = extraction_result
+            logger.info(
+                f"[{self.name}] Extracted {len(fields)} fields "
+                f"(confidence: {overall_score:.2f})"
+            )
         except json.JSONDecodeError as e:
             logger.error(f"[{self.name}] Failed to parse fields: {e}")
             logger.debug(f"[{self.name}] Raw response: {response[:200]}...")
-            context["fields"] = []
+            
+            context["fields"] = ExtractionResult(
+                data=[],
+                confidence=ConfidenceScore(
+                    overall=0.0,
+                    breakdown={"parse_error": 0.0},
+                    evidence=["Failed to parse JSON response"]
+                ),
+                sources=[],
+                metadata={"error": str(e)}
+            )
         
         return context
 
@@ -328,6 +470,14 @@ class BlueprintFlow:
             bm25_searcher=bm25_searcher
         )
         
+        # Initialize validation agent
+        self.validation_agent = ValidationAgent(
+            llm=self.llm,
+            searcher=self.searcher,
+            confidence_threshold=0.7,  # Refine if confidence < 70%
+            max_iterations=2  # Up to 2 refinement iterations
+        )
+        
         logger.info(f"Initialized BlueprintFlow for {device_name}")
 
     def run(self) -> dict[str, Any]:
@@ -349,7 +499,37 @@ class BlueprintFlow:
         discovery = MessageDiscoveryNode(self.llm, self.searcher)
         context = discovery.run(context)
         
-        discovered = context.get("discovered_messages", [])
+        # Extract data from ExtractionResult
+        discovery_result = context.get("discovered_messages")
+        if isinstance(discovery_result, ExtractionResult):
+            discovered = discovery_result.data
+            discovery_confidence = discovery_result.confidence.overall
+            logger.info(f"Discovery confidence: {discovery_confidence:.2f}")
+            
+            # Refine discovery if confidence is low
+            if discovery_confidence < self.validation_agent.confidence_threshold:
+                logger.info("Discovery confidence below threshold, refining...")
+                schema = {
+                    "required_fields": ["message_type", "direction", "description"],
+                    "field_types": {
+                        "message_type": str,
+                        "direction": str,
+                        "description": str,
+                    }
+                }
+                discovery_result = self.validation_agent.validate_and_refine(
+                    extraction=discovery_result,
+                    schema=schema,
+                    extraction_type="message_discovery"
+                )
+                discovered = discovery_result.data
+                discovery_confidence = discovery_result.confidence.overall
+                logger.info(f"Refined discovery confidence: {discovery_confidence:.2f}")
+        else:
+            # Fallback for old format
+            discovered = discovery_result if discovery_result else []
+            discovery_confidence = 0.0
+        
         if not discovered:
             logger.error("No messages discovered - aborting")
             return {"error": "No messages found in specification"}
@@ -373,10 +553,43 @@ class BlueprintFlow:
             # Run extraction for this message
             msg_context = field_node.run(context.copy())
             
+            # Extract data from ExtractionResult
+            field_result = msg_context.get("fields")
+            if isinstance(field_result, ExtractionResult):
+                fields = field_result.data
+                field_confidence = field_result.confidence.overall
+                field_metadata = field_result.metadata
+                
+                # Refine field extraction if confidence is low
+                if field_confidence < self.validation_agent.confidence_threshold:
+                    logger.info(f"Field confidence for {message_type} below threshold, refining...")
+                    schema = {
+                        "required_fields": ["field_name", "data_type"],
+                        "field_types": {
+                            "field_name": str,
+                            "data_type": str,
+                        }
+                    }
+                    field_result = self.validation_agent.validate_and_refine(
+                        extraction=field_result,
+                        schema=schema,
+                        extraction_type=f"field_extraction_{message_type}"
+                    )
+                    fields = field_result.data
+                    field_confidence = field_result.confidence.overall
+                    field_metadata = field_result.metadata
+                    logger.info(f"Refined field confidence for {message_type}: {field_confidence:.2f}")
+            else:
+                fields = field_result if field_result else []
+                field_confidence = 0.0
+                field_metadata = {}
+            
             # Combine with discovery info
             message_def = {
                 **msg_info,
-                "fields": msg_context.get("fields", [])
+                "fields": fields,
+                "confidence": field_confidence,
+                "field_metadata": field_metadata,
             }
             message_definitions.append(message_def)
         

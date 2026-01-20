@@ -21,6 +21,7 @@ from spec_parser.schemas.citation import Citation
 from spec_parser.config import settings
 from spec_parser.exceptions import PDFExtractionError
 from spec_parser.parsers.text_table_extractor import TextBasedTableExtractor
+from spec_parser.parsers.layout_detector import LayoutDetector
 
 
 class PyMuPDFExtractor:
@@ -37,6 +38,7 @@ class PyMuPDFExtractor:
 
         self.doc = None
         self.pdf_name = self.pdf_path.stem
+        self.layout_detector = LayoutDetector()
 
     def __enter__(self):
         """Context manager entry"""
@@ -106,8 +108,28 @@ class PyMuPDFExtractor:
         table_blocks = self._extract_tables(page, page_num)
         graphics_blocks = self._extract_graphics(page, page_num)
 
-        # Add all blocks with citations
+        # Combine all blocks before layout analysis
         all_blocks = text_blocks + image_blocks + table_blocks + graphics_blocks
+        
+        # Apply layout detection for proper reading order
+        if all_blocks:
+            page_width = page.rect.width
+            page_height = page.rect.height
+            
+            try:
+                layout = self.layout_detector.analyze_layout(
+                    all_blocks, page_width, page_height
+                )
+                all_blocks = self.layout_detector.reorder_blocks(all_blocks, layout)
+                logger.debug(
+                    f"Page {page_num}: Detected {layout.num_columns} columns, "
+                    f"reordered {len(all_blocks)} blocks"
+                )
+            except Exception as e:
+                logger.warning(f"Layout detection failed for page {page_num}: {e}")
+                # Continue with original ordering
+        
+        # Add all blocks with citations
         for idx, block in enumerate(all_blocks):
             citation = self._generate_citation(
                 page_num, block.type, idx, block.bbox
