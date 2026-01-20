@@ -2,13 +2,16 @@
 PyMuPDF extractor for structured content extraction from PDFs.
 
 Uses PyMuPDF4LLM in page-chunks mode for multimodal extraction with full provenance.
+Supports parallel page processing with ThreadPoolExecutor for performance.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Callable
 import pymupdf
 import pymupdf4llm
 from loguru import logger
+from tqdm import tqdm
 
 from spec_parser.schemas.page_bundle import (
     PageBundle,
@@ -144,29 +147,154 @@ class PyMuPDFExtractor:
         )
         return bundle
 
-    def extract_all_pages(self, max_pages: int = None) -> List[PageBundle]:
-        """Extract content from all pages
+    def extract_all_pages(
+        self, 
+        max_pages: int = None,
+        max_workers: int = 4,
+        parallel: bool = True,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> List[PageBundle]:
+        """Extract content from all pages with optional parallel processing.
         
         Args:
             max_pages: Optional limit on number of pages to extract (for debugging)
+            max_workers: Number of parallel workers for extraction (default 4)
+            parallel: Enable parallel extraction (default True, set False for debugging)
+            progress_callback: Optional callback(current, total) for progress updates
+            
+        Returns:
+            List of PageBundle objects, one per successfully extracted page
         """
         if not self.doc:
             raise PDFExtractionError("PDF not opened. Use context manager.")
 
-        bundles = []
         total_pages = len(self.doc)
         pages_to_process = min(max_pages, total_pages) if max_pages else total_pages
+        page_numbers = list(range(1, pages_to_process + 1))
         
-        for page_num in range(1, pages_to_process + 1):
+        bundles: List[PageBundle] = []
+        failed_pages: List[int] = []
+        
+        if parallel and max_workers > 1 and len(page_numbers) > 1:
+            bundles, failed_pages = self._extract_pages_parallel(
+                page_numbers, max_workers, progress_callback
+            )
+        else:
+            bundles, failed_pages = self._extract_pages_sequential(
+                page_numbers, progress_callback
+            )
+        
+        # Sort bundles by page number (parallel processing may return out of order)
+        bundles.sort(key=lambda b: b.page_number)
+        
+        if failed_pages:
+            logger.warning(f"Failed to extract {len(failed_pages)} pages: {failed_pages}")
+        
+        logger.info(
+            f"Extracted {len(bundles)}/{pages_to_process} pages from {self.pdf_name} "
+            f"(parallel={parallel}, workers={max_workers})"
+        )
+        return bundles
+    
+    def _extract_pages_sequential(
+        self,
+        page_numbers: List[int],
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Tuple[List[PageBundle], List[int]]:
+        """Extract pages sequentially (single-threaded).
+        
+        Args:
+            page_numbers: List of page numbers to extract
+            progress_callback: Optional progress callback
+            
+        Returns:
+            Tuple of (successful bundles, failed page numbers)
+        """
+        bundles = []
+        failed_pages = []
+        total = len(page_numbers)
+        
+        for idx, page_num in enumerate(tqdm(page_numbers, desc="Extracting pages", unit="page")):
             try:
                 bundle = self.extract_page(page_num)
                 bundles.append(bundle)
             except Exception as e:
                 logger.error(f"Failed to extract page {page_num}: {e}")
-                # Continue with other pages
-
-        logger.info(f"Extracted {len(bundles)}/{total_pages} pages from {self.pdf_name}")
-        return bundles
+                failed_pages.append(page_num)
+            
+            if progress_callback:
+                progress_callback(idx + 1, total)
+        
+        return bundles, failed_pages
+    
+    def _extract_pages_parallel(
+        self,
+        page_numbers: List[int],
+        max_workers: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Tuple[List[PageBundle], List[int]]:
+        """Extract pages in parallel using ThreadPoolExecutor.
+        
+        Note: PyMuPDF is thread-safe for reading operations.
+        
+        Args:
+            page_numbers: List of page numbers to extract
+            max_workers: Maximum number of concurrent workers
+            progress_callback: Optional progress callback
+            
+        Returns:
+            Tuple of (successful bundles, failed page numbers)
+        """
+        bundles = []
+        failed_pages = []
+        total = len(page_numbers)
+        completed = 0
+        
+        logger.info(f"Starting parallel extraction with {max_workers} workers for {total} pages")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all page extraction tasks
+            future_to_page = {
+                executor.submit(self._extract_page_safe, page_num): page_num
+                for page_num in page_numbers
+            }
+            
+            # Process completed futures with progress bar
+            with tqdm(total=total, desc="Extracting pages (parallel)", unit="page") as pbar:
+                for future in as_completed(future_to_page):
+                    page_num = future_to_page[future]
+                    try:
+                        bundle = future.result()
+                        if bundle:
+                            bundles.append(bundle)
+                        else:
+                            failed_pages.append(page_num)
+                    except Exception as e:
+                        logger.error(f"Parallel extraction failed for page {page_num}: {e}")
+                        failed_pages.append(page_num)
+                    
+                    completed += 1
+                    pbar.update(1)
+                    
+                    if progress_callback:
+                        progress_callback(completed, total)
+        
+        return bundles, failed_pages
+    
+    def _extract_page_safe(self, page_num: int) -> Optional[PageBundle]:
+        """Thread-safe wrapper for page extraction.
+        
+        Args:
+            page_num: Page number to extract (1-indexed)
+            
+        Returns:
+            PageBundle if successful, None if failed
+        """
+        try:
+            return self.extract_page(page_num)
+        except Exception as e:
+            logger.error(f"Error extracting page {page_num}: {e}")
+            return None
 
     def _extract_text_blocks(self, page, page_num: int) -> List[TextBlock]:
         """Extract text blocks with position data"""

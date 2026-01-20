@@ -1,18 +1,32 @@
 """Ollama provider for local LLM inference (Qwen2-Coder-7B, etc.)."""
 
+import json
 from typing import Optional
 
 import requests
+import tenacity
 from loguru import logger
 
 from spec_parser.llm.providers import BaseLLMProvider
+
+
+def log_retry_attempt(retry_state: tenacity.RetryCallState) -> None:
+    """Log retry attempts with context."""
+    attempt = retry_state.attempt_number
+    if retry_state.outcome and retry_state.outcome.failed:
+        exception = retry_state.outcome.exception()
+        logger.warning(
+            f"Ollama retry attempt {attempt}: {type(exception).__name__}: {exception}"
+        )
+    else:
+        logger.info(f"Ollama retry attempt {attempt}")
 
 
 class OllamaProvider(BaseLLMProvider):
     """Ollama provider for local LLM models.
     
     Supports Qwen2-Coder-7B, Llama, and other Ollama-compatible models.
-    No rate limiting needed for local inference.
+    Includes automatic retry with exponential backoff for reliability.
     """
 
     def __init__(
@@ -21,9 +35,14 @@ class OllamaProvider(BaseLLMProvider):
         base_url: str = "http://localhost:11434",
         temperature: float = 0.0,
         max_tokens: int = 4000,
-        timeout: int = 120
+        timeout: int = 180,
+        max_retries: int = 5,
+        retry_min_wait: float = 2.0,
+        retry_max_wait: float = 60.0,
+        retry_multiplier: float = 2.0,
+        retry_jitter: float = 5.0
     ):
-        """Initialize Ollama provider.
+        """Initialize Ollama provider with retry configuration.
         
         Args:
             model: Ollama model name (e.g., "qwen2.5-coder:7b", "llama3:8b")
@@ -31,12 +50,49 @@ class OllamaProvider(BaseLLMProvider):
             temperature: Sampling temperature (0.0 = deterministic)
             max_tokens: Maximum tokens in response
             timeout: Request timeout in seconds
+            max_retries: Maximum retry attempts on failure
+            retry_min_wait: Initial wait between retries (seconds)
+            retry_max_wait: Maximum wait between retries (seconds)
+            retry_multiplier: Exponential multiplier for wait time
+            retry_jitter: Random jitter added to wait time (seconds)
         """
         super().__init__(model=model, temperature=temperature, max_tokens=max_tokens)
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
         
-        logger.info(f"Initialized Ollama provider: {model} at {base_url}")
+        # Retry configuration
+        self.max_retries = max_retries
+        self.retry_min_wait = retry_min_wait
+        self.retry_max_wait = retry_max_wait
+        self.retry_multiplier = retry_multiplier
+        self.retry_jitter = retry_jitter
+        
+        # Create retry decorator dynamically
+        self._setup_retry()
+        
+        logger.info(
+            f"Initialized Ollama provider: {model} at {base_url} "
+            f"(max_retries={max_retries}, timeout={timeout}s)"
+        )
+    
+    def _setup_retry(self):
+        """Configure tenacity retry decorator."""
+        self._retry_decorator = tenacity.retry(
+            wait=tenacity.wait_exponential_jitter(
+                initial=self.retry_min_wait,
+                max=self.retry_max_wait,
+                exp_base=self.retry_multiplier,
+                jitter=self.retry_jitter
+            ),
+            stop=tenacity.stop_after_attempt(self.max_retries),
+            retry=tenacity.retry_if_exception_type((
+                requests.ConnectionError,
+                requests.Timeout,
+                requests.HTTPError,
+            )),
+            before_sleep=log_retry_attempt,
+            reraise=True
+        )
 
     def generate(
         self,
@@ -44,7 +100,7 @@ class OllamaProvider(BaseLLMProvider):
         system_prompt: Optional[str] = None,
         **kwargs
     ) -> str:
-        """Generate completion using Ollama API.
+        """Generate completion using Ollama API with automatic retry.
         
         Args:
             prompt: User prompt
@@ -55,9 +111,41 @@ class OllamaProvider(BaseLLMProvider):
             Generated text completion
             
         Raises:
-            requests.HTTPError: If Ollama API returns error
-            requests.ConnectionError: If Ollama is not running
+            RuntimeError: If Ollama is not running or all retries exhausted
         """
+        return self._generate_with_retry(prompt, system_prompt, **kwargs)
+    
+    def _generate_with_retry(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        **kwargs
+    ) -> str:
+        """Internal generate with tenacity retry wrapper."""
+        
+        @self._retry_decorator
+        def _call_ollama():
+            return self._make_request(prompt, system_prompt, **kwargs)
+        
+        try:
+            return _call_ollama()
+        except tenacity.RetryError as e:
+            logger.error(
+                f"Ollama exhausted {self.max_retries} retries. "
+                f"Last error: {e.last_attempt.exception()}"
+            )
+            raise RuntimeError(
+                f"Ollama failed after {self.max_retries} attempts. "
+                f"Check if Ollama is running: ollama serve"
+            ) from e
+    
+    def _make_request(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        **kwargs
+    ) -> str:
+        """Make a single Ollama API request."""
         # Acquire rate limit token (no-op for local)
         with self.rate_limiter:
             url = f"{self.base_url}/api/generate"
@@ -102,14 +190,22 @@ class OllamaProvider(BaseLLMProvider):
                 
             except requests.ConnectionError as e:
                 logger.error(f"Ollama connection failed at {self.base_url}: {e}")
-                raise RuntimeError(
-                    f"Ollama not running at {self.base_url}. "
-                    f"Start with: ollama serve"
-                ) from e
+                raise  # Will be retried
+            
+            except requests.Timeout as e:
+                logger.error(f"Ollama request timed out after {self.timeout}s: {e}")
+                raise  # Will be retried
             
             except requests.HTTPError as e:
-                logger.error(f"Ollama API error: {e.response.text}")
-                raise
+                # Check if it's a retryable error
+                if e.response.status_code in {408, 429, 500, 502, 503, 504}:
+                    logger.warning(
+                        f"Ollama retryable error {e.response.status_code}: {e}"
+                    )
+                    raise  # Will be retried
+                else:
+                    logger.error(f"Ollama API error: {e.response.text}")
+                    raise RuntimeError(f"Ollama API error: {e}") from e
 
     def is_available(self) -> bool:
         """Check if Ollama is running and model is available.
@@ -139,3 +235,4 @@ class OllamaProvider(BaseLLMProvider):
         except requests.RequestException as e:
             logger.warning(f"Ollama not available at {self.base_url}: {e}")
             return False
+

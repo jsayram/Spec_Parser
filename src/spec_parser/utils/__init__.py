@@ -21,6 +21,16 @@ from spec_parser.utils.file_handler import (
     file_size,
     safe_filename,
 )
+from spec_parser.utils.grounding_export import (
+    GroundingExporter,
+    export_groundings,
+)
+from spec_parser.utils.visualization import (
+    VisualizationRenderer,
+    visualize_extraction,
+    create_comparison_view,
+    DEFAULT_COLORS,
+)
 
 __all__ = [
     "setup_logger",
@@ -40,4 +50,12 @@ __all__ = [
     "list_files",
     "file_size",
     "safe_filename",
+    # Grounding export
+    "GroundingExporter",
+    "export_groundings",
+    # Visualization debug
+    "VisualizationRenderer",
+    "visualize_extraction",
+    "create_comparison_view",
+    "DEFAULT_COLORS",
 ]
