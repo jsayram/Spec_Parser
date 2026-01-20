@@ -291,12 +291,12 @@ def create_comparison_view(
     with pymupdf.open(pdf_path) as doc:
         if bundle_before:
             renderer.output_dir = output_dir / "before"
-            renderer.output_dir.mkdir(exist_ok=True)
+            renderer.output_dir.mkdir(parents=True, exist_ok=True)
             before_path = renderer.render_page(doc, bundle_before, page_num)
         
         if bundle_after:
             renderer.output_dir = output_dir / "after"
-            renderer.output_dir.mkdir(exist_ok=True)
+            renderer.output_dir.mkdir(parents=True, exist_ok=True)
             after_path = renderer.render_page(doc, bundle_after, page_num)
     
     return before_path, after_path
