@@ -43,10 +43,10 @@ This is a **V1 greenfield project** for parsing and normalizing POCT1 (Point-of-
 
 ### 4. Environment and Execution
 - **ALWAYS run Python in virtual environment from project root**
-- Use `/Users/jramirez/Git/Spec_Parser/.venv/bin/python` for execution
+- Use `<project-root>/.venv/bin/python` (`.venv\Scripts\python.exe` on Windows) for execution
 - All dependencies must be in `requirements.txt` or `requirements-dev.txt`
 - Never use system Python or global packages
-- Working directory must be `/Users/jramirez/Git/Spec_Parser`
+- Working directory must be `<project-root>`
 
 ### 5. Cross-Platform Support
 - Support Windows, macOS, and Linux equally
